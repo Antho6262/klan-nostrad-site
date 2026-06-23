@@ -237,10 +237,10 @@ async function tabActions(body) {
 
   body.innerHTML = `
     <div class="panel" style="border-color:rgba(212,175,55,.3);">
-      <div class="panel-head"><h2>Import rapide — config type « Sombra »</h2></div>
+      <div class="panel-head"><h2>Import rapide — actions classiques</h2></div>
       <p class="small muted">Crée en un clic les 5 actions classiques (Vente de Drogue, ATM, Cambu, Plantation, Vente de Branches)
       avec leurs catégories de stock associées. Tu pourras renommer/ajuster ensuite.</p>
-      <button class="btn btn-gold mt8" onclick="importerConfigSombra()">Importer la config Sombra</button>
+      <button class="btn btn-gold mt8" onclick="importerActionsClassiques()">Importer les actions classiques</button>
     </div>
 
     <div class="panel">
@@ -280,8 +280,8 @@ async function tabActions(body) {
   `;
 }
 
-async function importerConfigSombra() {
-  if (!confirm("Importer la configuration type Sombra (catégories de stock + 5 actions) ? Les éléments déjà existants avec le même nom ne seront pas dupliqués si tu annules après vérification.")) return;
+async function importerActionsClassiques() {
+  if (!confirm("Importer les actions classiques (catégories de stock + 5 actions) ? Les éléments déjà existants avec le même nom ne seront pas dupliqués si tu annules après vérification.")) return;
 
   const cats = {
     drogue_cat: { nom: "Drogue", emoji: "💊", produits: {
@@ -318,7 +318,7 @@ async function importerConfigSombra() {
     vente_branches: { nom: "Vente de Branches", montant_sale: 0, montant_propre: 0, recipe: [{ catId: "branches_cat", prodId: "branche", qty: 1 }] }
   });
 
-  toast("Config Sombra importée — ajuste les prix/stocks dans Admin → Stock.");
+  toast("Actions importées — ajuste les prix/stocks dans Admin → Stock.");
   loadTab("actions");
 }
 let RECIPE_LINES = [];

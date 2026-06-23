@@ -1,7 +1,6 @@
 /* ============================================================
    KLAN NOSTRAD — Style global
-   Palette : rouge (196,30,33 — couleur officielle du groupe)
-   + gris + blanc.
+   Palette : doré (212,175,55) + gris + blanc — fond et écritures dorés.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
@@ -16,10 +15,10 @@
   --bg-1: #0e1015;
   --bg-2: #151820;
   --bg-3: #1c2029;
-  --line: rgba(196,30,33,.16);
+  --line: rgba(212,175,55,.16);
   --text: #e9eaee;
   --text-dim: #9aa0ad;
-  --danger: #c1564c;
+  --danger: #b8731f;
   --success: #6fae7d;
   --warn: #d2a23a;
   --radius: 10px;
@@ -110,13 +109,17 @@ h1,h2,h3,h4{font-family:var(--font-display); letter-spacing:.02em; margin:0;}
 }
 .btn:hover{border-color:var(--steel); color:var(--steel); transform:translateY(-1px);}
 .btn-primary{
-  width:100%; background:linear-gradient(180deg, rgba(196,30,33,.18), rgba(196,30,33,.08));
-  border-color:var(--steel-dim); color:var(--steel); margin-top:6px;
+  width:100%; background:linear-gradient(180deg, #8a6d1f, #5c4a14);
+  border-color:var(--steel); color:#fbe7a8; font-weight:700;
+  text-shadow:0 0 12px rgba(251,231,168,.4); margin-top:6px;
 }
-.btn-primary:hover{background:linear-gradient(180deg, rgba(196,30,33,.28), rgba(196,30,33,.14));}
-.btn-gold{border-color:var(--gold-dim); color:var(--gold);}
-.btn-gold:hover{border-color:var(--gold); color:#ffffff;}
-.btn-danger{border-color:rgba(193,86,76,.5); color:var(--danger);}
+.btn-primary:hover{background:linear-gradient(180deg, #a07f26, #6e5818); color:#fff5d9;}
+.btn-gold{
+  background:linear-gradient(180deg, rgba(212,175,55,.22), rgba(212,175,55,.10));
+  border-color:var(--gold-dim); color:var(--gold); font-weight:700;
+}
+.btn-gold:hover{background:linear-gradient(180deg, rgba(212,175,55,.34), rgba(212,175,55,.18)); border-color:var(--gold); color:#fff5d9;}
+.btn-danger{border-color:rgba(184,115,31,.5); color:var(--danger);}
 .btn-danger:hover{border-color:var(--danger);}
 .btn-sm{padding:7px 12px; font-size:12.5px;}
 .login-error{
@@ -210,13 +213,13 @@ th{
   border-bottom:1px solid var(--line); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em;
   white-space:nowrap;
 }
-td{padding:10px 12px; border-bottom:1px solid rgba(196,30,33,.07); vertical-align:middle;}
-tr:hover td{background:rgba(196,30,33,.04);}
+td{padding:10px 12px; border-bottom:1px solid rgba(212,175,55,.07); vertical-align:middle;}
+tr:hover td{background:rgba(212,175,55,.04);}
 .empty-row td{color:var(--text-dim); text-align:center; padding:28px 12px; font-style:italic;}
 
 .badge{display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; letter-spacing:.02em;}
 .badge-ok{background:rgba(111,174,125,.14); color:var(--success);}
-.badge-fail{background:rgba(193,86,76,.14); color:var(--danger);}
+.badge-fail{background:rgba(184,115,31,.14); color:var(--danger);}
 .badge-warn{background:rgba(210,162,58,.14); color:var(--warn);}
 .badge-steel{background:var(--steel-soft); color:var(--steel);}
 
@@ -254,7 +257,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--steel);}
 
 ::-webkit-scrollbar{width:9px; height:9px;}
 ::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(196,30,33,.18); border-radius:6px;}
+::-webkit-scrollbar-thumb{background:rgba(212,175,55,.18); border-radius:6px;}
 
 .fade-in{animation:fadein .25s ease-out;}
 @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
