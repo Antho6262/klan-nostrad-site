@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, STOCK = {};
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Stock</h1>
+    <div class="sigil-rule"></div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Mouvement manuel</h2></div>
+      <div class="row">
+        <div><label class="l">Produit</label><select id="fProduit"></select></div>
+        <div><label class="l">Quantité</label><input type="number" id="fQte" value="1"></div>
+        <div><label class="l">Sens</label><select id="fSens"><option value="retrait">Retirer</option><option value="ajout">Ajouter</option></select></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%" onclick="mouvement()">Appliquer</button></div>
+      </div>
+      <p class="small muted mt8">Pour créer des catégories/produits ou fixer un seuil d'alerte, va dans Admin → Stock.</p>
+    </div>
+
+    <div id="catsWrap"></div>
+  `;
+}
+
+function badgeNiveau(p) {
+  const stock = Number(p.stock) || 0, seuil = Number(p.seuil) || 0;
+  if (stock <= seuil) return '<span class="badge badge-fail">Rupture</span>';
+  if (stock <= seuil * 1.5) return '<span class="badge badge-warn">Faible</span>';
+  return '<span class="badge badge-ok">OK</span>';
+}
+
+async function chargerStock() {
+  const snap = await db.ref("stock").once("value");
+  STOCK = snap.val() || {};
+
+  const selProduit = document.getElementById("fProduit");
+  selProduit.innerHTML = "";
+  entries(STOCK).forEach(([catId, cat]) => {
+    entries(cat.produits).forEach(([pid, p]) => {
+      selProduit.appendChild(new Option(`${cat.emoji || ""} ${cat.nom} — ${p.nom}`, catId + "::" + pid));
+    });
+  });
+
+  const wrap = document.getElementById("catsWrap");
+  const catList = entries(STOCK);
+  wrap.innerHTML = catList.length ? catList.map(([catId, cat]) => `
+    <div class="panel">
+      <div class="panel-head"><h2>${cat.emoji || "📦"} ${cat.nom}</h2></div>
+      <table>
+        <thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
+        <tbody>
+          ${entries(cat.produits).length ? entries(cat.produits).map(([pid, p]) => `
+            <tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${p.stock}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(p)}</td></tr>
+          `).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit dans cette catégorie</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `).join("") : '<div class="panel"><p class="muted">Aucune catégorie de stock définie. Configure-les dans Admin → Stock.</p></div>';
+}
+
+async function mouvement() {
+  const val = document.getElementById("fProduit").value;
+  if (!val) { toast("Sélectionnez un produit.", true); return; }
+  const [catId, pid] = val.split("::");
+  const qte = Number(document.getElementById("fQte").value) || 0;
+  const sens = document.getElementById("fSens").value;
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
+
+  const ref = db.ref(`stock/${catId}/produits/${pid}/stock`);
+  const snap = await ref.once("value");
+  const current = Number(snap.val()) || 0;
+  const next = sens === "ajout" ? current + qte : Math.max(0, current - qte);
+  await ref.set(next);
+
+  await db.ref("journal_stock/" + uid()).set({
+    date: todayISO(), membre: SESSION.prenom,
+    action: sens === "ajout" ? "Ajout manuel" : "Retrait manuel",
+    quantite: qte, produit: STOCK[catId].produits[pid].nom, createdAt: Date.now()
+  });
+
+  toast("Stock mis à jour.");
+  await chargerStock();
+}
+
+(async function () {
+  SESSION = await initShell("stock", "Stock");
+  if (!SESSION) return;
+  renderContent();
+  await chargerStock();
+})();
+</script>
+</body>
+</html>

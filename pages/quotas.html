@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quotas — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION;
+
+async function getActiveWeek() {
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return list.find(s => s.bloquee !== true) || list[0] || null;
+}
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Quotas</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small">Quota = nombre d'actions attendu par membre sur la semaine active. Modifiable ici par un admin.</p>
+    <div class="panel mt16">
+      <table><thead><tr><th>Membre</th><th>Quota / semaine</th><th>Réalisé</th><th>Progression</th>${SESSION && SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
+        <tbody id="tblQuotas"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody></table>
+    </div>
+  `;
+}
+
+async function chargerQuotas() {
+  const week = await getActiveWeek();
+  const [snapM, snapA] = await Promise.all([
+    db.ref("membres").once("value"),
+    week ? db.ref("actions/" + week.id).once("value") : Promise.resolve({ val: () => null })
+  ]);
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
+  const actions = entries(snapA.val()).map(([id, a]) => a);
+
+  const isAdmin = SESSION.role === "admin";
+  document.getElementById("tblQuotas").innerHTML = membres.length ? membres.map(m => {
+    const fait = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
+    const quota = Number(m.quota) || 0;
+    const pct = quota > 0 ? Math.min(100, Math.round(fait / quota * 100)) : 0;
+    return `<tr>
+      <td>${m.prenom} ${m.nom || ""}</td>
+      <td>${isAdmin ? `<input type="number" value="${quota}" style="max-width:90px" onchange="majQuota('${m.id}', this.value)">` : quota}</td>
+      <td>${fait}</td>
+      <td style="min-width:140px;">
+        <div style="background:var(--bg-2); border-radius:6px; height:8px; overflow:hidden;">
+          <div style="height:100%; width:${pct}%; background:${pct >= 100 ? 'var(--success)' : 'var(--steel)'};"></div>
+        </div>
+      </td>
+      ${isAdmin ? '<td></td>' : ''}
+    </tr>`;
+  }).join("") : '<tr class="empty-row"><td colspan="5">Aucun membre</td></tr>';
+}
+async function majQuota(id, val) {
+  await db.ref("membres/" + id + "/quota").set(Number(val) || 0);
+  toast("Quota mis à jour.");
+}
+
+(async function () {
+  SESSION = await initShell("quotas", "Quotas");
+  if (!SESSION) return;
+  renderContent();
+  await chargerQuotas();
+})();
+</script>
+</body>
+</html>

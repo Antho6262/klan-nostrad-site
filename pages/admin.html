@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION;
+const TABS = ["semaines", "membres", "stock", "actions", "grades", "permissions", "config"];
+let currentTab = "semaines";
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Admin</h1>
+    <div class="sigil-rule"></div>
+    <div class="tabs" id="tabsBar"></div>
+    <div id="tabBody"></div>
+  `;
+  document.getElementById("tabsBar").innerHTML = TABS.map(t =>
+    `<div class="tab${t === currentTab ? ' active' : ''}" onclick="switchTab('${t}')">${t.charAt(0).toUpperCase() + t.slice(1)}</div>`
+  ).join("");
+  loadTab(currentTab);
+}
+function switchTab(t) { currentTab = t; renderContent(); }
+
+async function loadTab(t) {
+  const body = document.getElementById("tabBody");
+  body.innerHTML = '<p class="muted">Chargement…</p>';
+  if (t === "semaines") return tabSemaines(body);
+  if (t === "membres") return tabMembres(body);
+  if (t === "stock") return tabStock(body);
+  if (t === "actions") return tabActions(body);
+  if (t === "grades") return tabGrades(body);
+  if (t === "permissions") return tabPermissions(body);
+  if (t === "config") return tabConfig(body);
+}
+
+/* ===================== SEMAINES ===================== */
+async function tabSemaines(body) {
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Nouvelle semaine</h2></div>
+      <div class="row"><input type="text" id="newSemaineNom" placeholder="Nom (ex: Semaine 2)">
+      <button class="btn btn-primary" onclick="creerSemaine()">Créer</button></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Semaines</h2></div>
+      <table><thead><tr><th>Nom</th><th>Statut</th><th>Créée le</th><th></th></tr></thead>
+        <tbody>${list.length ? list.map(s => `
+          <tr><td>${s.nom}</td><td><span class="badge ${s.bloquee ? 'badge-fail' : 'badge-ok'}">${s.bloquee ? 'Bloquée' : 'Active'}</span></td>
+          <td class="small muted">${s.createdAt ? new Date(s.createdAt).toLocaleString('fr-FR') : '-'}</td>
+          <td>
+            ${s.bloquee ? `<span class="btn btn-sm" onclick="toggleSemaine('${s.id}', false)">Débloquer</span>`
+                        : `<span class="btn btn-sm btn-gold" onclick="bloquerSemaine('${s.id}','${s.nom}')">Bloquer + Résumé</span>`}
+            <span class="btn btn-sm btn-danger" onclick="suppSemaine('${s.id}')">Suppr.</span>
+          </td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="4">Aucune semaine</td></tr>'}</tbody></table>
+    </div>
+    <div class="panel" id="resumeWrap" style="display:none;">
+      <div class="panel-head"><h2>Résumé de semaine</h2></div>
+      <textarea id="resumeText" rows="10" readonly></textarea>
+      <p class="small muted mt8">Copie ce texte dans Discord, ou configure un webhook dans Admin → Config pour l'envoi automatique.</p>
+    </div>
+  `;
+}
+async function creerSemaine() {
+  const nom = document.getElementById("newSemaineNom").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("semaines/" + uid()).set({ nom, bloquee: false, createdAt: Date.now() });
+  toast("Semaine créée.");
+  loadTab("semaines");
+}
+async function toggleSemaine(id, bloquee) {
+  await db.ref("semaines/" + id + "/bloquee").set(bloquee);
+  loadTab("semaines");
+}
+async function suppSemaine(id) {
+  if (!confirm("Supprimer cette semaine et toutes ses actions ?")) return;
+  await db.ref("semaines/" + id).remove();
+  await db.ref("actions/" + id).remove();
+  loadTab("semaines");
+}
+async function bloquerSemaine(id, nom) {
+  const snap = await db.ref("actions/" + id).once("value");
+  const actions = entries(snap.val()).map(([aid, a]) => a);
+  const gainsSale = actions.reduce((acc, a) => acc + Number(a.argent_sale || 0), 0);
+  const gainsPropre = actions.reduce((acc, a) => acc + Number(a.argent_propre || 0), 0);
+  const reussites = actions.filter(a => a.resultat === "Réussite").length;
+  const echecs = actions.filter(a => a.resultat === "Échec").length;
+  const parMembre = {};
+  actions.forEach(a => { parMembre[a.prenom_membre] = (parMembre[a.prenom_membre] || 0) + 1; });
+  const classement = Object.entries(parMembre).sort((a, b) => b[1] - a[1])
+    .map(([p, n], i) => `${i + 1}. ${p} — ${n} action(s)`).join("\n");
+
+  const texte = `📋 RÉSUMÉ — ${nom} — Klan Nostrad\n` +
+    `Actions : ${actions.length} (✅ ${reussites} / ❌ ${echecs})\n` +
+    `Gains sale : ${formatMoney(gainsSale)}\n` +
+    `Gains propre : ${formatMoney(gainsPropre)}\n\n` +
+    `Classement :\n${classement || "—"}`;
+
+  await db.ref("semaines/" + id + "/bloquee").set(true);
+  document.getElementById("resumeWrap").style.display = "block";
+  document.getElementById("resumeText").value = texte;
+
+  const cfgSnap = await db.ref("config/discord_webhook_semaine").once("value");
+  const webhook = cfgSnap.val();
+  if (webhook) {
+    try {
+      await fetch(webhook, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: texte }) });
+      toast("Résumé envoyé sur Discord.");
+    } catch (e) { toast("Webhook configuré mais envoi impossible (CORS/URL).", true); }
+  }
+  loadTab("semaines");
+  document.getElementById("resumeWrap").style.display = "block";
+  document.getElementById("resumeText").value = texte;
+}
+
+/* ===================== MEMBRES ===================== */
+async function tabMembres(body) {
+  const [snapM, snapG] = await Promise.all([db.ref("membres").once("value"), db.ref("grades").once("value")]);
+  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m }));
+  const grades = entries(snapG.val()).map(([id, g]) => g.nom);
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Ajouter un membre</h2></div>
+      <div class="row">
+        <div><label class="l">Prénom</label><input type="text" id="mPrenom"></div>
+        <div><label class="l">Nom</label><input type="text" id="mNom"></div>
+        <div><label class="l">Grade</label><select id="mGrade">${grades.map(g => `<option>${g}</option>`).join("") || '<option value="">Aucun grade — créez-en dans l\'onglet Grades</option>'}</select></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Rôle</label><select id="mRole"><option value="membre">Membre</option><option value="admin">Admin</option></select></div>
+        <div><label class="l">Quota perso (optionnel)</label><input type="number" id="mQuota" value="0"></div>
+        <div><label class="l">Mot de passe</label><input type="text" id="mPass" placeholder="prenom2026"></div>
+      </div>
+      <button class="btn btn-primary mt16" onclick="ajouterMembre()">Ajouter</button>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Membres (${membres.length})</h2></div>
+      <table><thead><tr><th>Prénom</th><th>Nom</th><th>Grade</th><th>Rôle</th><th>Actif</th><th></th></tr></thead>
+        <tbody>${membres.length ? membres.map(m => `
+          <tr><td>${m.prenom}</td><td>${m.nom || ""}</td><td>${m.grade || "-"}</td>
+          <td><span class="badge ${m.role === 'admin' ? 'badge-steel' : ''}">${m.role || 'membre'}</span></td>
+          <td><span class="badge ${m.actif !== false ? 'badge-ok' : 'badge-fail'}" style="cursor:pointer" onclick="toggleActif('${m.id}', ${m.actif === false})">${m.actif !== false ? 'Actif' : 'Inactif'}</span></td>
+          <td>${m.id === 'tony_diaz' ? '<span class="small muted">Fondateur</span>' : `<span class="btn btn-sm btn-danger" onclick="suppMembre('${m.id}')">Suppr.</span>`}</td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="6">Aucun membre</td></tr>'}</tbody></table>
+    </div>
+  `;
+}
+async function ajouterMembre() {
+  const prenom = document.getElementById("mPrenom").value.trim();
+  if (!prenom) { toast("Prénom requis.", true); return; }
+  const pass = document.getElementById("mPass").value.trim() || (prenom.toLowerCase() + "2026");
+  await db.ref("membres/" + uid()).set({
+    prenom, nom: document.getElementById("mNom").value.trim(),
+    grade: document.getElementById("mGrade").value, role: document.getElementById("mRole").value,
+    mot_de_passe: pass, actif: true, quota: Number(document.getElementById("mQuota").value) || 0
+  });
+  toast("Membre ajouté.");
+  loadTab("membres");
+}
+async function toggleActif(id, val) { await db.ref("membres/" + id + "/actif").set(val); loadTab("membres"); }
+async function suppMembre(id) { if (confirm("Supprimer ce membre ?")) { await db.ref("membres/" + id).remove(); loadTab("membres"); } }
+
+/* ===================== STOCK ===================== */
+async function tabStock(body) {
+  const snap = await db.ref("stock").once("value");
+  const cats = entries(snap.val()).map(([id, c]) => ({ id, ...c }));
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Nouvelle catégorie</h2></div>
+      <div class="row"><input type="text" id="catEmoji" placeholder="Emoji (ex: 💊)" style="max-width:90px;">
+      <input type="text" id="catNom" placeholder="Nom de la catégorie">
+      <button class="btn btn-primary" onclick="creerCategorie()">Créer</button></div>
+    </div>
+    ${cats.map(c => `
+      <div class="panel">
+        <div class="panel-head"><h2>${c.emoji || "📦"} ${c.nom}</h2>
+          <span class="btn btn-sm btn-danger" onclick="suppCategorie('${c.id}')">Supprimer la catégorie</span></div>
+        <table><thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th></th></tr></thead>
+          <tbody>${entries(c.produits).length ? entries(c.produits).map(([pid, p]) => `
+            <tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td>${p.stock}</td><td>${p.seuil || 0}</td>
+            <td><span class="btn btn-sm btn-danger" onclick="suppProduit('${c.id}','${pid}')">Suppr.</span></td></tr>
+          `).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit</td></tr>'}</tbody></table>
+        <div class="row mt16">
+          <input type="text" placeholder="Nom du produit" id="pNom_${c.id}">
+          <input type="number" placeholder="Prix" id="pPrix_${c.id}">
+          <input type="number" placeholder="Stock initial" id="pStock_${c.id}">
+          <input type="number" placeholder="Seuil d'alerte" id="pSeuil_${c.id}">
+          <button class="btn btn-gold" onclick="ajouterProduit('${c.id}')">Ajouter produit</button>
+        </div>
+      </div>
+    `).join("") || '<p class="muted">Aucune catégorie de stock.</p>'}
+  `;
+}
+async function creerCategorie() {
+  const nom = document.getElementById("catNom").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("stock/" + uid()).set({ nom, emoji: document.getElementById("catEmoji").value.trim() || "📦", produits: {} });
+  toast("Catégorie créée.");
+  loadTab("stock");
+}
+async function suppCategorie(id) { if (confirm("Supprimer cette catégorie et tous ses produits ?")) { await db.ref("stock/" + id).remove(); loadTab("stock"); } }
+async function ajouterProduit(catId) {
+  const nom = document.getElementById("pNom_" + catId).value.trim();
+  if (!nom) { toast("Nom du produit requis.", true); return; }
+  await db.ref("stock/" + catId + "/produits/" + uid()).set({
+    nom,
+    prix: Number(document.getElementById("pPrix_" + catId).value) || 0,
+    stock: Number(document.getElementById("pStock_" + catId).value) || 0,
+    seuil: Number(document.getElementById("pSeuil_" + catId).value) || 0
+  });
+  toast("Produit ajouté.");
+  loadTab("stock");
+}
+async function suppProduit(catId, pid) { if (confirm("Supprimer ce produit ?")) { await db.ref("stock/" + catId + "/produits/" + pid).remove(); loadTab("stock"); } }
+
+/* ===================== ACTIONS ===================== */
+async function tabActions(body) {
+  const [snapA, snapS] = await Promise.all([db.ref("actions_dispo").once("value"), db.ref("stock").once("value")]);
+  const actions = entries(snapA.val()).map(([id, a]) => ({ id, ...a }));
+  const cats = entries(snapS.val()).map(([id, c]) => ({ id, ...c }));
+  const prodOptions = cats.flatMap(c => entries(c.produits).map(([pid, p]) => `<option value="${c.id}::${pid}">${c.emoji || ""} ${c.nom} — ${p.nom}</option>`)).join("");
+
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Nouvelle action</h2></div>
+      <div class="row">
+        <input type="text" id="aNom" placeholder="Nom de l'action (ex: Vente, Cambriolage…)">
+        <input type="number" id="aSale" placeholder="$ sale / unité" value="0">
+        <input type="number" id="aPropre" placeholder="$ propre / unité" value="0">
+      </div>
+      <div class="row mt8" id="recipeBuilder">
+        <select id="recipeProd"><option value="">— Produit consommé (optionnel) —</option>${prodOptions}</select>
+        <input type="number" id="recipeQty" placeholder="Qté consommée / unité" value="1">
+        <button class="btn btn-sm" onclick="addRecipeLine()" type="button">+ Ajouter à la recette</button>
+      </div>
+      <div id="recipeLines" class="small muted mt8"></div>
+      <button class="btn btn-primary mt16" onclick="creerAction()">Créer l'action</button>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Actions disponibles</h2></div>
+      <table><thead><tr><th>Nom</th><th>$ sale/u</th><th>$ propre/u</th><th>Recette stock</th><th></th></tr></thead>
+        <tbody>${actions.length ? actions.map(a => `
+          <tr><td>${a.nom}</td><td>${formatMoney(a.montant_sale || 0)}</td><td>${formatMoney(a.montant_propre || 0)}</td>
+          <td class="small">${(a.recipe || []).map(r => {
+            const cat = cats.find(c => c.id === r.catId);
+            const prod = cat && cat.produits ? cat.produits[r.prodId] : null;
+            return prod ? `${prod.nom} x${r.qty}` : "—";
+          }).join(", ") || "—"}</td>
+          <td><span class="btn btn-sm btn-danger" onclick="suppAction('${a.id}')">Suppr.</span></td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="5">Aucune action définie</td></tr>'}</tbody></table>
+    </div>
+  `;
+}
+let RECIPE_LINES = [];
+function addRecipeLine() {
+  const val = document.getElementById("recipeProd").value;
+  const qty = Number(document.getElementById("recipeQty").value) || 0;
+  if (!val || qty <= 0) { toast("Sélectionne un produit et une quantité.", true); return; }
+  const [catId, prodId] = val.split("::");
+  RECIPE_LINES.push({ catId, prodId, qty });
+  document.getElementById("recipeLines").textContent = "Recette : " + RECIPE_LINES.length + " ligne(s) ajoutée(s) — sera enregistrée à la création.";
+}
+async function creerAction() {
+  const nom = document.getElementById("aNom").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("actions_dispo/" + uid()).set({
+    nom, montant_sale: Number(document.getElementById("aSale").value) || 0,
+    montant_propre: Number(document.getElementById("aPropre").value) || 0,
+    recipe: RECIPE_LINES
+  });
+  RECIPE_LINES = [];
+  toast("Action créée.");
+  loadTab("actions");
+}
+async function suppAction(id) { if (confirm("Supprimer cette action ?")) { await db.ref("actions_dispo/" + id).remove(); loadTab("actions"); } }
+
+/* ===================== GRADES ===================== */
+async function tabGrades(body) {
+  const snap = await db.ref("grades").once("value");
+  const grades = entries(snap.val()).map(([id, g]) => ({ id, ...g })).sort((a, b) => (a.ordre || 99) - (b.ordre || 99));
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Nouveau grade</h2></div>
+      <div class="row"><input type="text" id="gNom" placeholder="Nom du grade">
+      <input type="number" id="gOrdre" placeholder="Ordre hiérarchique (1 = le plus haut)">
+      <button class="btn btn-primary" onclick="creerGrade()">Créer</button></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Grades</h2></div>
+      <table><thead><tr><th>Ordre</th><th>Nom</th><th></th></tr></thead>
+        <tbody>${grades.length ? grades.map(g => `
+          <tr><td>${g.ordre || "-"}</td><td>${g.nom}</td>
+          <td>${g.nom === 'Fondateur' ? '<span class="small muted">protégé</span>' : `<span class="btn btn-sm btn-danger" onclick="suppGrade('${g.id}')">Suppr.</span>`}</td></tr>
+        `).join("") : '<tr class="empty-row"><td colspan="3">Aucun grade</td></tr>'}</tbody></table>
+    </div>
+  `;
+}
+async function creerGrade() {
+  const nom = document.getElementById("gNom").value.trim();
+  if (!nom) { toast("Nom requis.", true); return; }
+  await db.ref("grades/" + uid()).set({ nom, ordre: Number(document.getElementById("gOrdre").value) || 9 });
+  toast("Grade créé.");
+  loadTab("grades");
+}
+async function suppGrade(id) { if (confirm("Supprimer ce grade ?")) { await db.ref("grades/" + id).remove(); loadTab("grades"); } }
+
+/* ===================== PERMISSIONS ===================== */
+async function tabPermissions(body) {
+  const [snapG, snapP] = await Promise.all([db.ref("grades").once("value"), db.ref("permissions").once("value")]);
+  const grades = entries(snapG.val()).map(([id, g]) => g.nom).filter(n => n !== "Fondateur");
+  const perms = snapP.val() || {};
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Permissions par grade</h2></div>
+      <p class="small muted">Le Fondateur a toujours accès à tout. Coche les pages accessibles pour chaque autre grade, puis enregistre.</p>
+      <table>
+        <thead><tr><th>Page</th>${grades.map(g => `<th>${g}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${PAGES_DISPO.map(p => `<tr><td>${p.label}</td>${grades.map(g =>
+            `<td style="text-align:center;"><input type="checkbox" id="perm_${g}_${p.page}" ${(perms[g] && perms[g][p.page]) ? "checked" : ""}></td>`
+          ).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+      ${grades.length === 0 ? '<p class="muted mt16">Crée d\'abord des grades dans l\'onglet Grades.</p>' :
+      '<button class="btn btn-primary mt16" onclick="enregistrerPermissions()">Enregistrer les permissions</button>'}
+    </div>
+  `;
+  window._permGrades = grades;
+}
+async function enregistrerPermissions() {
+  const grades = window._permGrades || [];
+  const update = {};
+  grades.forEach(g => { update[g] = {}; PAGES_DISPO.forEach(p => { update[g][p.page] = document.getElementById(`perm_${g}_${p.page}`).checked; }); });
+  await db.ref("permissions").update(update);
+  _permsCache = null;
+  toast("Permissions enregistrées.");
+}
+
+/* ===================== CONFIG ===================== */
+async function tabConfig(body) {
+  const snap = await db.ref("config").once("value");
+  const cfg = snap.val() || {};
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Paramètres généraux</h2></div>
+      <div class="row">
+        <div><label class="l">Taux de frais blanchiment (%)</label><input type="number" id="cfgTaux" value="${cfg.blanchiment_taux ?? 35}"></div>
+        <div><label class="l">Webhook Discord — résumé de semaine (optionnel)</label><input type="text" id="cfgWebhook" value="${cfg.discord_webhook_semaine || ''}" placeholder="https://discord.com/api/webhooks/..."></div>
+      </div>
+      <button class="btn btn-primary mt16" onclick="saveConfig()">Enregistrer</button>
+    </div>
+  `;
+}
+async function saveConfig() {
+  await db.ref("config").update({
+    blanchiment_taux: Number(document.getElementById("cfgTaux").value) || 35,
+    discord_webhook_semaine: document.getElementById("cfgWebhook").value.trim()
+  });
+  toast("Configuration enregistrée.");
+}
+
+(async function () {
+  SESSION = await initShell("admin", "Admin");
+  if (!SESSION) return;
+  renderContent();
+})();
+</script>
+</body>
+</html>

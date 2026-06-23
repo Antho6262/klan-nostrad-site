@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tracker — Klan Nostrad</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="shell"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/app.js"></script>
+<script>
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {};
+
+async function getActiveWeek() {
+  const snap = await db.ref("semaines").once("value");
+  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
+  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return list.find(s => s.bloquee !== true) || list[0] || null;
+}
+
+function renderContent() {
+  document.getElementById("content").innerHTML = `
+    <h1>Tracker</h1>
+    <div class="sigil-rule"></div>
+    <p class="muted small" id="weekLabel">Semaine active : —</p>
+
+    <div class="panel mt16">
+      <div class="panel-head"><h2>Nouvelle action</h2></div>
+      <div class="row">
+        <div><label class="l">Membre</label><select id="fMembre"></select></div>
+        <div><label class="l">Action</label><select id="fAction" onchange="autoFillMontants()"></select></div>
+        <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1" onchange="autoFillMontants()"></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
+        <div id="raisonWrap" style="display:none;"><label class="l">Raison de l'échec</label><input type="text" id="fRaison" placeholder="Optionnel"></div>
+        <div><label class="l">Date</label><input type="date" id="fDate"></div>
+      </div>
+      <div class="row mt8">
+        <div><label class="l">Argent sale ($)</label><input type="number" id="fSale" value="0"></div>
+        <div><label class="l">Argent propre ($)</label><input type="number" id="fPropre" value="0"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterAction()">Enregistrer</button></div>
+      </div>
+      <p class="small muted mt8">Le stock lié à l'action (recette définie dans Admin → Actions) est déduit automatiquement si le résultat est "Réussite".</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Historique — ${ACTIVE_WEEK ? ACTIVE_WEEK.nom : ""}</h2>
+        <div class="row" style="max-width:520px;">
+          <select id="filtMembre" onchange="renderTable()"><option value="">Tous les membres</option></select>
+          <select id="filtAction" onchange="renderTable()"><option value="">Toutes les actions</option></select>
+          <select id="filtResultat" onchange="renderTable()"><option value="">Tous résultats</option><option>Réussite</option><option>Échec</option></select>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Membre</th><th>Action</th><th>Qté</th><th>Résultat</th><th>Sale</th><th>Propre</th><th></th></tr></thead>
+        <tbody id="tblActions"><tr class="empty-row"><td colspan="8">Chargement…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById("fDate").value = todayISO();
+}
+
+function toggleRaison() {
+  document.getElementById("raisonWrap").style.display = document.getElementById("fResultat").value === "Échec" ? "block" : "none";
+}
+
+function autoFillMontants() {
+  const actId = document.getElementById("fAction").value;
+  const qte = Number(document.getElementById("fQte").value) || 0;
+  const act = ACTIONS_DISPO[actId];
+  if (!act) return;
+  document.getElementById("fSale").value = Math.round((Number(act.montant_sale) || 0) * qte);
+  document.getElementById("fPropre").value = Math.round((Number(act.montant_propre) || 0) * qte);
+}
+
+async function chargerListes() {
+  const [snapM, snapA, snapS] = await Promise.all([
+    db.ref("membres").once("value"), db.ref("actions_dispo").once("value"), db.ref("stock").once("value")
+  ]);
+  MEMBRES = snapM.val() || {};
+  ACTIONS_DISPO = snapA.val() || {};
+  STOCK = snapS.val() || {};
+
+  const selM = document.getElementById("fMembre"), filtM = document.getElementById("filtMembre");
+  entries(MEMBRES).forEach(([id, m]) => {
+    if (m.actif === false) return;
+    const label = m.prenom + (m.nom ? " " + m.nom : "");
+    selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
+    filtM.appendChild(new Option(label, id));
+  });
+
+  const selA = document.getElementById("fAction"), filtA = document.getElementById("filtAction");
+  const actEntries = entries(ACTIONS_DISPO);
+  if (!actEntries.length) {
+    selA.innerHTML = '<option value="">Aucune action — à créer dans Admin</option>';
+  } else {
+    actEntries.forEach(([id, a]) => {
+      selA.appendChild(new Option(a.nom, id));
+      filtA.appendChild(new Option(a.nom, id));
+    });
+  }
+  autoFillMontants();
+}
+
+async function deduireStock(actionDef, quantite) {
+  if (!actionDef.recipe || !actionDef.recipe.length) return;
+  for (const item of actionDef.recipe) {
+    const ref = db.ref(`stock/${item.catId}/produits/${item.prodId}/stock`);
+    const snap = await ref.once("value");
+    const current = Number(snap.val()) || 0;
+    const newStock = Math.max(0, current - Number(item.qty) * quantite);
+    await ref.set(newStock);
+    await db.ref("journal_stock/" + uid()).set({
+      date: todayISO(), membre: SESSION.prenom, action: actionDef.nom,
+      quantite: Number(item.qty) * quantite,
+      produit: (STOCK[item.catId] && STOCK[item.catId].produits && STOCK[item.catId].produits[item.prodId]) ? STOCK[item.catId].produits[item.prodId].nom : item.prodId,
+      createdAt: Date.now()
+    });
+  }
+}
+
+async function ajouterAction() {
+  if (!ACTIVE_WEEK) { toast("Aucune semaine active.", true); return; }
+  if (ACTIVE_WEEK.bloquee) { toast("La semaine active est bloquée.", true); return; }
+  const membreId = document.getElementById("fMembre").value;
+  const actionId = document.getElementById("fAction").value;
+  const qte = Number(document.getElementById("fQte").value) || 0;
+  const resultat = document.getElementById("fResultat").value;
+  const raison = document.getElementById("fRaison").value;
+  const sale = Number(document.getElementById("fSale").value) || 0;
+  const propre = Number(document.getElementById("fPropre").value) || 0;
+  const m = MEMBRES[membreId], act = ACTIONS_DISPO[actionId];
+  if (!m || !act || qte <= 0) { toast("Complétez le formulaire.", true); return; }
+
+  const entry = {
+    membre_id: membreId, prenom_membre: m.prenom, nom_membre: m.nom || "", grade_membre: m.grade || "",
+    action: act.nom, action_id: actionId, quantite: qte,
+    date: document.getElementById("fDate").value || todayISO(), heure: nowHHMM(),
+    resultat, raison_echec: resultat === "Échec" ? raison : "",
+    argent_sale: sale, argent_propre: propre, gains_totaux: sale + propre,
+    createdAt: Date.now()
+  };
+  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + uid()).set(entry);
+
+  if (resultat === "Réussite") {
+    await deduireStock(act, qte);
+    if (sale > 0) await db.ref("argent/sale/" + uid()).set({ date: entry.date, description: "Action : " + act.nom, type: "Entrée", montant: sale, responsable: m.prenom, createdAt: Date.now() });
+    if (propre > 0) await db.ref("argent/propre/" + uid()).set({ date: entry.date, description: "Action : " + act.nom, type: "Entrée", montant: propre, responsable: m.prenom, createdAt: Date.now() });
+  }
+
+  toast("Action enregistrée.");
+  await renderTable();
+  await chargerListes();
+}
+
+let ALL_ACTIONS = [];
+async function renderTable() {
+  const snap = await db.ref("actions/" + (ACTIVE_WEEK ? ACTIVE_WEEK.id : "x")).once("value");
+  ALL_ACTIONS = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const fm = document.getElementById("filtMembre").value;
+  const fa = document.getElementById("filtAction").value;
+  const fr = document.getElementById("filtResultat").value;
+  const rows = ALL_ACTIONS.filter(a =>
+    (!fm || a.membre_id === fm) && (!fa || a.action_id === fa) && (!fr || a.resultat === fr)
+  );
+
+  const canDelete = SESSION.role === "admin";
+  document.getElementById("tblActions").innerHTML = rows.length ? rows.map(a => `
+    <tr>
+      <td>${a.date} ${a.heure || ""}</td>
+      <td>${a.prenom_membre}</td>
+      <td>${a.action}</td>
+      <td>${a.quantite}</td>
+      <td><span class="badge ${a.resultat === 'Réussite' ? 'badge-ok' : 'badge-fail'}">${a.resultat}</span></td>
+      <td>${formatMoney(a.argent_sale)}</td>
+      <td>${formatMoney(a.argent_propre)}</td>
+      <td>${canDelete ? `<span class="btn btn-sm btn-danger" onclick="supprimerAction('${a.id}')">Suppr.</span>` : ""}</td>
+    </tr>`).join("") : '<tr class="empty-row"><td colspan="8">Aucune action enregistrée</td></tr>';
+}
+
+async function supprimerAction(id) {
+  if (!confirm("Supprimer cette action ? Le stock déjà déduit ne sera pas restauré automatiquement.")) return;
+  await db.ref("actions/" + ACTIVE_WEEK.id + "/" + id).remove();
+  toast("Action supprimée.");
+  renderTable();
+}
+
+(async function () {
+  SESSION = await initShell("tracker", "Tracker");
+  if (!SESSION) return;
+  ACTIVE_WEEK = await getActiveWeek();
+  renderContent();
+  await chargerListes();
+  await renderTable();
+})();
+</script>
+</body>
+</html>
