@@ -14,13 +14,13 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_PAYE = 20;
+let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_DROGUE = 20, TAUX_AUTRES = 45;
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Paye</h1>
     <div class="sigil-rule"></div>
-    <p class="muted small">Montant suggéré = gains générés par le membre (actions réussies + blanchiment dont il est responsable) × taux de paye (${TAUX_PAYE}%, configurable dans Admin → Config).</p>
+    <p class="muted small">Montant suggéré = (gains Vente de Drogue × ${TAUX_DROGUE}%) + (gains des autres actions + blanchiment × ${TAUX_AUTRES}%). Taux modifiables dans Admin → Config.</p>
 
     <div class="panel mt16">
       <div class="row" style="align-items:flex-end;">
@@ -32,7 +32,7 @@ function renderContent() {
 
     <div class="panel">
       <table>
-        <thead><tr><th>Membre</th><th>Gains actions</th><th>Gains blanchiment</th><th>Total généré</th><th>Montant à payer</th><th>Argent</th><th></th></tr></thead>
+        <thead><tr><th>Membre</th><th>Gains Drogue</th><th>Gains autres + blanchiment</th><th>Total généré</th><th>Montant à payer</th><th>Argent</th><th></th></tr></thead>
         <tbody id="tblPaye"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
     </div>
   `;
@@ -59,9 +59,10 @@ async function chargerPaye() {
   const debut = SEMAINE_SEL.createdAt || 0;
   const fin = SEMAINE_SEL.closedAt || Date.now();
 
-  const [snapM, snapA, snapB, snapP, snapSale, snapPropre] = await Promise.all([
+  const [snapM, snapA, snapAD, snapB, snapP, snapSale, snapPropre] = await Promise.all([
     db.ref("membres").once("value"),
     db.ref("actions/" + SEMAINE_SEL.id).once("value"),
+    db.ref("actions_dispo").once("value"),
     db.ref("blanchiments").once("value"),
     db.ref("payes/" + SEMAINE_SEL.id).once("value"),
     db.ref("argent/sale").once("value"),
@@ -69,6 +70,7 @@ async function chargerPaye() {
   ]);
   const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => m.actif !== false);
   const actions = entries(snapA.val()).map(([id, a]) => a);
+  const actionsDispo = snapAD.val() || {};
   const blanchiments = entries(snapB.val()).map(([id, b]) => b).filter(b => (b.createdAt || 0) >= debut && (b.createdAt || 0) <= fin);
   const payes = snapP.val() || {};
 
@@ -77,18 +79,23 @@ async function chargerPaye() {
 
   let totalPaye = 0;
   document.getElementById("tblPaye").innerHTML = membres.length ? membres.map(m => {
-    const gainsActions = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+    const mesActions = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite");
+    const gainsDrogue = mesActions.filter(a => actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable)
+      .reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+    const gainsAutresActions = mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
+      .reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
     const gainsBlanchiment = blanchiments.filter(b => b.responsable === m.prenom).reduce((acc, b) => acc + Number(b.montant_propre || 0), 0);
-    const totalGenere = gainsActions + gainsBlanchiment;
+    const gainsAutres = gainsAutresActions + gainsBlanchiment;
+    const totalGenere = gainsDrogue + gainsAutres;
     const dejaPaye = payes[m.id];
-    const suggestion = Math.round(totalGenere * TAUX_PAYE / 100);
+    const suggestion = Math.round(gainsDrogue * TAUX_DROGUE / 100 + gainsAutres * TAUX_AUTRES / 100);
     const montant = dejaPaye ? Number(dejaPaye.montant) || 0 : suggestion;
     if (dejaPaye) totalPaye += Number(dejaPaye.montant) || 0;
 
     return `<tr>
       <td>${m.prenom} ${m.nom || ""}</td>
-      <td>${formatMoney(gainsActions)}</td>
-      <td>${formatMoney(gainsBlanchiment)}</td>
+      <td>${formatMoney(gainsDrogue)}</td>
+      <td>${formatMoney(gainsAutres)}</td>
       <td class="mono">${formatMoney(totalGenere)}</td>
       <td>${isAdmin && !dejaPaye ? `<input type="number" value="${montant}" style="max-width:100px" id="montant_${m.id}">` : formatMoney(montant)}</td>
       <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}"><option value="propre">Propre</option><option value="sale">Sale</option></select>` : "-"}</td>
@@ -120,8 +127,10 @@ async function payer(membreId, prenom) {
 (async function () {
   SESSION = await initShell("paye", "Paye");
   if (!SESSION) return;
-  const snapCfg = await db.ref("config/taux_paye").once("value");
-  TAUX_PAYE = snapCfg.val() ?? 20;
+  const snapCfg = await db.ref("config").once("value");
+  const cfg = snapCfg.val() || {};
+  TAUX_DROGUE = cfg.taux_paye_drogue ?? 20;
+  TAUX_AUTRES = cfg.taux_paye_autres ?? 45;
   renderContent();
   await chargerSemaines();
   await chargerPaye();
