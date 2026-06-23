@@ -60,7 +60,7 @@ async function chargerMembres() {
 
 function doLogin() {
   const id = document.getElementById("selMembre").value;
-  const pass = document.getElementById("inpPass").value;
+  const pass = document.getElementById("inpPass").value.trim();
   const errEl = document.getElementById("errMsg");
   errEl.textContent = "";
   if (!id) { errEl.textContent = "Sélectionnez un membre."; return; }
