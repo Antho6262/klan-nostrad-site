@@ -50,6 +50,7 @@ async function initShell(activePage, pageTitle) {
     <div class="shell">
       <aside class="sidebar">
         <div class="sidebar-head">
+          <img src="${root}img/logo.png" alt="Klan Nostrad" class="sidebar-coin">
           <div class="sidebar-logo"><span class="full">KLAN<br>NOSTRAD</span></div>
         </div>
         <nav class="nav">${navHtml}</nav>
