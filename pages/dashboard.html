@@ -14,16 +14,10 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK_ID = null, ACTIVE_WEEK_NOM = "—";
+let SESSION;
+let ACTIVE_WEEK_ID = null, ACTIONS_REF = null;
+let DATA = { semaines: {}, argentSale: {}, argentPropre: {}, stock: {}, membres: {}, actions: {} };
 let lastActionCount = null;
-
-async function getActiveWeek() {
-  const snap = await db.ref("semaines").once("value");
-  const list = entries(snap.val()).map(([id, s]) => ({ id, ...s }));
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const active = list.find(s => s.bloquee !== true) || list[0];
-  return active || null;
-}
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
@@ -53,30 +47,46 @@ function renderContent() {
   `;
 }
 
-async function refreshDashboard() {
-  const week = await getActiveWeek();
-  ACTIVE_WEEK_ID = week ? week.id : null;
-  ACTIVE_WEEK_NOM = week ? week.nom : "Aucune semaine";
-  document.getElementById("weekLabel").textContent = "Semaine active : " + ACTIVE_WEEK_NOM + (week && week.bloquee ? " (bloquée)" : "");
+function calcSolde(val) {
+  return entries(val).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
+}
 
-  // soldes
-  const [snapSale, snapPropre] = await Promise.all([
-    db.ref("argent/sale").once("value"),
-    db.ref("argent/propre").once("value")
-  ]);
-  const calcSolde = (val) => entries(val).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
-  document.getElementById("soldeSale").textContent = formatMoney(calcSolde(snapSale.val()));
-  document.getElementById("soldePropre").textContent = formatMoney(calcSolde(snapPropre.val()));
+function recompute() {
+  // semaine active = la plus récente non bloquée, sinon la plus récente
+  const list = entries(DATA.semaines).map(([id, s]) => ({ id, ...s })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const week = list.find(s => s.bloquee !== true) || list[0] || null;
+  document.getElementById("weekLabel").textContent = "Semaine active : " + (week ? week.nom : "Aucune semaine") + (week && week.bloquee ? " (bloquée)" : "");
 
-  // actions semaine active
-  let actions = [];
-  if (ACTIVE_WEEK_ID) {
-    const snapA = await db.ref("actions/" + ACTIVE_WEEK_ID).once("value");
-    actions = entries(snapA.val()).map(([id, a]) => ({ id, ...a }));
+  // si la semaine active a changé, on réabonne le listener temps réel sur le bon nœud actions/{id}
+  const newWeekId = week ? week.id : null;
+  if (newWeekId !== ACTIVE_WEEK_ID) {
+    if (ACTIONS_REF) ACTIONS_REF.off("value", onActionsChange);
+    ACTIVE_WEEK_ID = newWeekId;
+    DATA.actions = {};
+    if (ACTIVE_WEEK_ID) {
+      ACTIONS_REF = db.ref("actions/" + ACTIVE_WEEK_ID);
+      ACTIONS_REF.on("value", onActionsChange);
+    } else {
+      ACTIONS_REF = null;
+      renderDerived();
+    }
+    return; // renderDerived() sera appelé par onActionsChange une fois les données reçues
   }
-  if (lastActionCount !== null && actions.length > lastActionCount) {
-    toast("Nouvelle action enregistrée");
-  }
+  renderDerived();
+}
+
+function onActionsChange(snap) {
+  DATA.actions = snap.val() || {};
+  renderDerived();
+}
+
+function renderDerived() {
+  // soldes (mis à jour en direct dès qu'une écriture argent/sale ou argent/propre arrive)
+  document.getElementById("soldeSale").textContent = formatMoney(calcSolde(DATA.argentSale));
+  document.getElementById("soldePropre").textContent = formatMoney(calcSolde(DATA.argentPropre));
+
+  const actions = entries(DATA.actions).map(([id, a]) => ({ id, ...a }));
+  if (lastActionCount !== null && actions.length > lastActionCount) toast("Nouvelle action enregistrée");
   lastActionCount = actions.length;
 
   const reussites = actions.filter(a => a.resultat === "Réussite").length;
@@ -86,39 +96,38 @@ async function refreshDashboard() {
   document.getElementById("gainsTotaux").textContent = formatMoney(gains);
 
   // ruptures de stock
-  const snapStock = await db.ref("stock").once("value");
   const ruptures = [];
-  entries(snapStock.val()).forEach(([catId, cat]) => {
-    entries(cat.produits).forEach(([pid, p]) => {
-      if (Number(p.stock) <= Number(p.seuil || 0)) ruptures.push(p);
-    });
+  entries(DATA.stock).forEach(([catId, cat]) => {
+    entries(cat.produits).forEach(([pid, p]) => { if (Number(p.stock) <= Number(p.seuil || 0)) ruptures.push(p); });
   });
-  const tblR = document.getElementById("tblRuptures");
-  tblR.innerHTML = ruptures.length
+  document.getElementById("tblRuptures").innerHTML = ruptures.length
     ? ruptures.map(p => `<tr><td>${p.nom}</td><td>${p.stock}</td><td>${p.seuil || 0}</td></tr>`).join("")
     : '<tr class="empty-row"><td colspan="3">Aucune rupture — tout est configuré dans Admin → Stock</td></tr>';
 
   // quotas du jour
-  const snapM = await db.ref("membres").once("value");
-  const membres = entries(snapM.val()).map(([id, m]) => ({ id, ...m })).filter(m => Number(m.quota) > 0);
+  const membres = entries(DATA.membres).map(([id, m]) => ({ id, ...m })).filter(m => Number(m.quota) > 0);
   const today = todayISO();
   const todayActions = actions.filter(a => (a.date || "").slice(0, 10) === today);
-  const tblQ = document.getElementById("tblQuotas");
   const rows = membres.map(m => {
     const fait = todayActions.filter(a => a.membre_id === m.id).reduce((acc, a) => acc + Number(a.quantite || 0), 0);
     if (fait >= m.quota) return null;
     return `<tr><td>${m.prenom}</td><td>${m.quota}</td><td>${fait}</td></tr>`;
   }).filter(Boolean);
-  tblQ.innerHTML = rows.length ? rows.join("") : '<tr class="empty-row"><td colspan="3">Aucun quota défini ou tous atteints</td></tr>';
+  document.getElementById("tblQuotas").innerHTML = rows.length ? rows.join("") : '<tr class="empty-row"><td colspan="3">Aucun quota défini ou tous atteints</td></tr>';
 }
 
 (async function () {
   SESSION = await initShell("dashboard", "Dashboard");
   if (!SESSION) return;
   renderContent();
-  await refreshDashboard();
-  setInterval(refreshDashboard, 60000);
-  db.ref("actions/" + (ACTIVE_WEEK_ID || "x")).on("value", () => {}); // no-op hook point for future live listeners
+
+  // écoute temps réel — chaque écriture Firebase (mouvement d'argent, action, stock, membre)
+  // met à jour le dashboard instantanément, sans rechargement ni attente.
+  db.ref("semaines").on("value", snap => { DATA.semaines = snap.val() || {}; recompute(); });
+  db.ref("argent/sale").on("value", snap => { DATA.argentSale = snap.val() || {}; renderDerived(); });
+  db.ref("argent/propre").on("value", snap => { DATA.argentPropre = snap.val() || {}; renderDerived(); });
+  db.ref("stock").on("value", snap => { DATA.stock = snap.val() || {}; renderDerived(); });
+  db.ref("membres").on("value", snap => { DATA.membres = snap.val() || {}; renderDerived(); });
 })();
 </script>
 </body>
