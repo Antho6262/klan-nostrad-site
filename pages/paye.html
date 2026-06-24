@@ -32,7 +32,7 @@ function renderContent() {
 
     <div class="panel">
       <table>
-        <thead><tr><th>Membre</th><th>Gains Drogue</th><th>Gains autres + blanchiment</th><th>Total généré</th><th>Montant à payer</th><th>Argent</th><th></th></tr></thead>
+        <thead><tr><th>Membre</th><th>Gains Drogue</th><th>Gains actions + blanchiment</th><th>Total généré</th><th>Montant à payer</th><th>Argent</th><th></th></tr></thead>
         <tbody id="tblPaye"><tr class="empty-row"><td colspan="7">Chargement…</td></tr></tbody></table>
     </div>
   `;
@@ -97,17 +97,16 @@ async function chargerPaye() {
       <td>${formatMoney(gainsDrogue)}</td>
       <td>${formatMoney(gainsAutres)}</td>
       <td class="mono">${formatMoney(totalGenere)}</td>
-      <td>${isAdmin && !dejaPaye ? `<input type="number" value="${montant}" style="max-width:100px" id="montant_${m.id}">` : formatMoney(montant)}</td>
+      <td>${formatMoney(montant)}</td>
       <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}"><option value="propre">Propre</option><option value="sale">Sale</option></select>` : "-"}</td>
-      <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}','${m.prenom}')">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
+      <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}','${m.prenom}',${montant})">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
     </tr>`;
   }).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>';
 
   document.getElementById("totalPayeDisp").textContent = formatMoney(totalPaye);
 }
 
-async function payer(membreId, prenom) {
-  const montant = Number(document.getElementById("montant_" + membreId).value) || 0;
+async function payer(membreId, prenom, montant) {
   if (montant <= 0) { toast("Montant invalide.", true); return; }
   const typeArgent = document.getElementById("typeArgent_" + membreId).value;
   if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}) à ${prenom} ?`)) return;
