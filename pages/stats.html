@@ -137,7 +137,7 @@ function chargerStats() {
   document.getElementById("cardQuantiteDrogue").style.display = type === "drogue" ? "" : "none";
   if (type === "drogue") {
     const qteVendue = base.filter(a => a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
-    document.getElementById("quantiteDrogue").textContent = `${drogueNom || "Toutes les drogues"} x ${qteVendue}`;
+    document.getElementById("quantiteDrogue").textContent = `${drogueNom || "Toutes les drogues"} : ${qteVendue}`;
   }
 
   document.getElementById("panelClassement").style.display = portee === "groupe" ? "" : "none";
@@ -163,16 +163,29 @@ function chargerStats() {
           : `<th>#</th><th>Membre</th><th>Quantité vendue</th><th>Gains générés</th>`)
       : `<th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th>`;
 
-    document.getElementById("tblClassement").innerHTML = classement.length ? classement.map(([nom, d], i) => {
+    let lignesClassement = classement.length ? classement.map(([nom, d], i) => {
       if (type === "drogue") {
         if (toutesDrogues) {
           const cellsDrogue = PRODUITS_DROGUE.map(dn => `<td>${d.parDrogue[dn] || 0}</td>`).join("");
           return `<tr><td>${i + 1}</td><td>${nom}</td>${cellsDrogue}<td>${formatMoney(d.gains)}</td></tr>`;
         }
-        return `<tr><td>${i + 1}</td><td>${nom}</td><td>${drogueNom} x ${d.qte}</td><td>${formatMoney(d.gains)}</td></tr>`;
+        return `<tr><td>${i + 1}</td><td>${nom}</td><td>${drogueNom} : ${d.qte}</td><td>${formatMoney(d.gains)}</td></tr>`;
       }
       return `<tr><td>${i + 1}</td><td>${nom}</td><td>${d.actions}</td><td>${d.reussites}</td><td>${formatMoney(d.gains)}</td></tr>`;
     }).join("") : `<tr class="empty-row"><td colspan="${type === "drogue" ? (toutesDrogues ? PRODUITS_DROGUE.length + 3 : 4) : 5}">Aucune donnée</td></tr>`;
+
+    if (classement.length && type === "drogue") {
+      const totalGains = classement.reduce((acc, [, d]) => acc + d.gains, 0);
+      if (toutesDrogues) {
+        const totauxDrogue = PRODUITS_DROGUE.map(dn => classement.reduce((acc, [, d]) => acc + (d.parDrogue[dn] || 0), 0));
+        lignesClassement += `<tr style="font-weight:bold;border-top:1px solid var(--gold)"><td></td><td>Total</td>${totauxDrogue.map(t => `<td>${t}</td>`).join("")}<td>${formatMoney(totalGains)}</td></tr>`;
+      } else {
+        const totalQte = classement.reduce((acc, [, d]) => acc + d.qte, 0);
+        lignesClassement += `<tr style="font-weight:bold;border-top:1px solid var(--gold)"><td></td><td>Total</td><td>${drogueNom} : ${totalQte}</td><td>${formatMoney(totalGains)}</td></tr>`;
+      }
+    }
+
+    document.getElementById("tblClassement").innerHTML = lignesClassement;
   }
 
   const lignesSemaines = SEMAINES.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(s => {
