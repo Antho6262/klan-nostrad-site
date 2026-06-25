@@ -103,9 +103,10 @@ async function init() {
   PRODUITS_DROGUE = catDrogue ? entries(catDrogue[1].produits).map(([, p]) => p.nom) : [];
 
   const actionsClassiques = entries(ACTIONS_DISPO).filter(([, a]) => !a.cat_variable);
-  document.getElementById("selAction").innerHTML = actionsClassiques.length
-    ? actionsClassiques.map(([id, a]) => `<option value="${id}">${a.nom}</option>`).join("")
-    : '<option value="">Aucune action</option>';
+  document.getElementById("selAction").innerHTML = `<option value="">Toutes les actions</option>` +
+    (actionsClassiques.length
+      ? actionsClassiques.map(([id, a]) => `<option value="${id}">${a.nom}</option>`).join("")
+      : "");
 
   document.getElementById("selDrogue").innerHTML = `<option value="">Toutes les drogues</option>`
     + PRODUITS_DROGUE.map(nom => `<option value="${nom}">${nom}</option>`).join("");
@@ -123,7 +124,7 @@ function chargerStats() {
   const membreId = document.getElementById("selMembre").value;
 
   let base = ACTIONS_ALL;
-  if (type === "action") base = base.filter(a => a.action_id === actionId);
+  if (type === "action") base = actionId ? base.filter(a => a.action_id === actionId) : base.filter(a => !a.produit_drogue_id);
   else if (type === "drogue") base = drogueNom ? base.filter(a => a.produit_drogue === drogueNom) : base.filter(a => a.produit_drogue_id);
 
   if (portee === "membre") base = base.filter(a => a.membre_id === membreId);
@@ -144,7 +145,7 @@ function chargerStats() {
     document.getElementById("quantiteVal").textContent = `${drogueNom || "Toutes les drogues"} : ${qteVendue}`;
   } else if (type === "action") {
     const qteAction = base.filter(a => a.resultat === "Réussite").reduce((acc, a) => acc + Number(a.quantite || 0), 0);
-    const actionNom = (ACTIONS_DISPO[actionId] && ACTIONS_DISPO[actionId].nom) || "";
+    const actionNom = actionId ? ((ACTIONS_DISPO[actionId] && ACTIONS_DISPO[actionId].nom) || "") : "Toutes les actions";
     document.getElementById("titreQuantite").textContent = "Quantité réalisée";
     document.getElementById("quantiteVal").textContent = `${actionNom} : ${qteAction}`;
   }
@@ -153,25 +154,30 @@ function chargerStats() {
     const parMembre = {};
     base.forEach(a => {
       const key = a.prenom_membre || "?";
-      if (!parMembre[key]) parMembre[key] = { actions: 0, reussites: 0, gains: 0, qte: 0, parDrogue: {} };
+      if (!parMembre[key]) parMembre[key] = { actions: 0, reussites: 0, gains: 0, qte: 0, parDrogue: {}, parAction: {} };
       parMembre[key].actions++;
       if (a.resultat === "Réussite") {
         parMembre[key].reussites++;
         parMembre[key].qte += Number(a.quantite || 0);
         if (a.produit_drogue) parMembre[key].parDrogue[a.produit_drogue] = (parMembre[key].parDrogue[a.produit_drogue] || 0) + Number(a.quantite || 0);
+        if (a.action) parMembre[key].parAction[a.action] = (parMembre[key].parAction[a.action] || 0) + Number(a.quantite || 0);
       }
       parMembre[key].gains += Number(a.gains_totaux || 0);
     });
     const classement = Object.entries(parMembre).sort((a, b) => b[1].gains - a[1].gains);
     const toutesDrogues = type === "drogue" && !drogueNom;
-    const actionNomClassement = (ACTIONS_DISPO[actionId] && ACTIONS_DISPO[actionId].nom) || "";
+    const toutesActions = type === "action" && !actionId;
+    const nomsActionsClassiques = entries(ACTIONS_DISPO).filter(([, a]) => !a.cat_variable).map(([, a]) => a.nom);
+    const actionNomClassement = actionId ? ((ACTIONS_DISPO[actionId] && ACTIONS_DISPO[actionId].nom) || "") : "Toutes les actions";
 
     document.getElementById("theadClassement").innerHTML = type === "drogue"
       ? (toutesDrogues
           ? `<th>#</th><th>Membre</th>` + PRODUITS_DROGUE.map(nom => `<th>${nom}</th>`).join("") + `<th>Gains générés</th>`
           : `<th>#</th><th>Membre</th><th>Quantité vendue</th><th>Gains générés</th>`)
       : type === "action"
-        ? `<th>#</th><th>Membre</th><th>Quantité réalisée</th><th>Gains générés</th>`
+        ? (toutesActions
+            ? `<th>#</th><th>Membre</th>` + nomsActionsClassiques.map(nom => `<th>${nom}</th>`).join("") + `<th>Gains générés</th>`
+            : `<th>#</th><th>Membre</th><th>Quantité réalisée</th><th>Gains générés</th>`)
         : `<th>#</th><th>Membre</th><th>Actions</th><th>Réussites</th><th>Gains générés</th>`;
 
     let lignesClassement = classement.length ? classement.map(([nom, d], i) => {
@@ -183,16 +189,27 @@ function chargerStats() {
         return `<tr><td>${i + 1}</td><td>${nom}</td><td>${drogueNom} : ${d.qte}</td><td>${formatMoney(d.gains)}</td></tr>`;
       }
       if (type === "action") {
+        if (toutesActions) {
+          const cellsAction = nomsActionsClassiques.map(an => `<td>${d.parAction[an] || 0}</td>`).join("");
+          return `<tr><td>${i + 1}</td><td>${nom}</td>${cellsAction}<td>${formatMoney(d.gains)}</td></tr>`;
+        }
         return `<tr><td>${i + 1}</td><td>${nom}</td><td>${actionNomClassement} : ${d.qte}</td><td>${formatMoney(d.gains)}</td></tr>`;
       }
       return `<tr><td>${i + 1}</td><td>${nom}</td><td>${d.actions}</td><td>${d.reussites}</td><td>${formatMoney(d.gains)}</td></tr>`;
-    }).join("") : `<tr class="empty-row"><td colspan="${type === "drogue" ? (toutesDrogues ? PRODUITS_DROGUE.length + 3 : 4) : (type === "action" ? 4 : 5)}">Aucune donnée</td></tr>`;
+    }).join("") : `<tr class="empty-row"><td colspan="${
+      type === "drogue" ? (toutesDrogues ? PRODUITS_DROGUE.length + 3 : 4)
+      : type === "action" ? (toutesActions ? nomsActionsClassiques.length + 3 : 4)
+      : 5
+    }">Aucune donnée</td></tr>`;
 
     if (classement.length && isSpecific) {
       const totalGains = classement.reduce((acc, [, d]) => acc + d.gains, 0);
       if (toutesDrogues) {
         const totauxDrogue = PRODUITS_DROGUE.map(dn => classement.reduce((acc, [, d]) => acc + (d.parDrogue[dn] || 0), 0));
         lignesClassement += `<tr style="font-weight:bold;border-top:1px solid var(--gold)"><td></td><td>Total</td>${totauxDrogue.map(t => `<td>${t}</td>`).join("")}<td>${formatMoney(totalGains)}</td></tr>`;
+      } else if (toutesActions) {
+        const totauxAction = nomsActionsClassiques.map(an => classement.reduce((acc, [, d]) => acc + (d.parAction[an] || 0), 0));
+        lignesClassement += `<tr style="font-weight:bold;border-top:1px solid var(--gold)"><td></td><td>Total</td>${totauxAction.map(t => `<td>${t}</td>`).join("")}<td>${formatMoney(totalGains)}</td></tr>`;
       } else {
         const totalQte = classement.reduce((acc, [, d]) => acc + d.qte, 0);
         const label = type === "drogue" ? drogueNom : actionNomClassement;
