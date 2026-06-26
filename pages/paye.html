@@ -75,13 +75,18 @@ async function chargerPaye() {
   const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
   document.getElementById("soldePropreDisp").textContent = formatMoney(calcSolde(snapPropre.val()));
 
+  function partGains(membreId, a) {
+    const totalPersonnes = 1 + (a.participants_ids ? a.participants_ids.length : 0);
+    return Number(a.gains_totaux || 0) / totalPersonnes;
+  }
+
   let totalPaye = 0;
   document.getElementById("tblPaye").innerHTML = membres.length ? membres.map(m => {
-    const mesActions = actions.filter(a => a.membre_id === m.id && a.resultat === "Réussite");
+    const mesActions = actions.filter(a => a.resultat === "Réussite" && (a.membre_id === m.id || (a.participants_ids && a.participants_ids.includes(m.id))));
     const gainsDrogue = mesActions.filter(a => actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable)
-      .reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+      .reduce((acc, a) => acc + partGains(m.id, a), 0);
     const gainsAction = mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
-      .reduce((acc, a) => acc + Number(a.gains_totaux || 0), 0);
+      .reduce((acc, a) => acc + partGains(m.id, a), 0);
     const totalGenere = gainsDrogue + gainsAction;
     const dejaPaye = payes[m.id];
     const suggestion = Math.round(gainsDrogue * TAUX_DROGUE / 100 + gainsAction * TAUX_AUTRES / 100);
