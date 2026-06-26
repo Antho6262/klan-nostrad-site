@@ -32,12 +32,18 @@ function renderContent() {
     <div class="panel mt16">
       <div class="panel-head"><h2>Nouvelle action</h2></div>
       <div class="row">
-        <div><label class="l">Membre</label><select id="fMembre"></select></div>
+        <div><label class="l">Membre</label><select id="fMembre" onchange="renderEquipeCheckboxes()"></select></div>
         <div><label class="l">Action</label><select id="fAction" onchange="onActionChange()"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1" onchange="autoFillMontants()"></div>
       </div>
       <div class="row mt8" id="produitVarWrap" style="display:none;">
         <div><label class="l">Produit</label><select id="fProduitVar"></select></div>
+      </div>
+      <div class="row mt8" id="equipeWrap" style="display:none;">
+        <div style="width:100%;">
+          <label class="l">Membres participants (en plus du membre principal — total minimum 3 personnes)</label>
+          <div id="equipeCheckboxes" class="row" style="flex-wrap:wrap;gap:10px;"></div>
+        </div>
       </div>
       <div class="row mt8">
         <div><label class="l">Résultat</label><select id="fResultat" onchange="toggleRaison()"><option>Réussite</option><option>Échec</option></select></div>
@@ -88,7 +94,23 @@ function onActionChange() {
     wrap.style.display = "none";
     sel.innerHTML = "";
   }
+  document.getElementById("equipeWrap").style.display = (act && (act.nom === "Armurerie" || act.nom === "Fleeca")) ? "block" : "none";
+  renderEquipeCheckboxes();
   autoFillMontants();
+}
+
+function estActionEquipe() {
+  const act = ACTIONS_DISPO[document.getElementById("fAction").value];
+  return !!(act && (act.nom === "Armurerie" || act.nom === "Fleeca"));
+}
+
+function renderEquipeCheckboxes() {
+  if (!estActionEquipe()) return;
+  const mainId = document.getElementById("fMembre").value;
+  const box = document.getElementById("equipeCheckboxes");
+  box.innerHTML = entries(MEMBRES).filter(([id, m]) => m.actif !== false && id !== mainId).map(([id, m]) =>
+    `<label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" value="${id}" class="chkEquipe"> ${m.prenom}</label>`
+  ).join("");
 }
 
 function autoFillMontants() {
@@ -160,6 +182,12 @@ async function ajouterAction() {
   if (!m || !act || qte <= 0) { toast("Complétez le formulaire.", true); return; }
   if (act.cat_variable && !document.getElementById("fProduitVar").value) { toast("Choisissez un produit.", true); return; }
 
+  let participantsIds = [];
+  if (act.nom === "Armurerie" || act.nom === "Fleeca") {
+    participantsIds = Array.from(document.querySelectorAll(".chkEquipe:checked")).map(c => c.value);
+    if (1 + participantsIds.length < 3) { toast("Minimum 3 personnes requises pour " + act.nom + ".", true); return; }
+  }
+
   const entry = {
     membre_id: membreId, prenom_membre: m.prenom, nom_membre: m.nom || "", grade_membre: m.grade || "",
     action: act.nom, action_id: actionId, quantite: qte,
@@ -168,6 +196,10 @@ async function ajouterAction() {
     argent_sale: sale, argent_propre: propre, gains_totaux: sale + propre,
     createdAt: Date.now()
   };
+  if (participantsIds.length) {
+    entry.participants_ids = participantsIds;
+    entry.participants_noms = participantsIds.map(id => MEMBRES[id] ? MEMBRES[id].prenom : "?");
+  }
   if (act.cat_variable) {
     const pid = document.getElementById("fProduitVar").value;
     const prod = STOCK[act.cat_variable].produits[pid];
@@ -214,7 +246,7 @@ async function renderTable() {
     <tr>
       <td>${a.date} ${a.heure || ""}</td>
       <td>${a.prenom_membre}</td>
-      <td>${a.action}${a.produit_drogue ? ` <span class="muted small">(${a.produit_drogue})</span>` : ""}</td>
+      <td>${a.action}${a.produit_drogue ? ` <span class="muted small">(${a.produit_drogue})</span>` : ""}${a.participants_noms && a.participants_noms.length ? ` <span class="muted small">+ ${a.participants_noms.join(", ")}</span>` : ""}</td>
       <td>${a.quantite}</td>
       <td><span class="badge ${a.resultat === 'Réussite' ? 'badge-ok' : 'badge-fail'}">${a.resultat}</span></td>
       <td>${formatMoney(a.argent_sale)}</td>
