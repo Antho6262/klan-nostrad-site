@@ -14,7 +14,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {};
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, LABO_ACTION_ID = null, LABO_PRODUITS = {}, LABO_STOCK = {}, LABO_STOCK_COMMUN = {};
 
 async function getActiveWeek() {
   const snap = await db.ref("semaines").once("value");
@@ -46,8 +46,8 @@ function renderContent() {
     <p class="muted small" id="weekLabel">Semaine active : —</p>
 
     <div class="panel mt16">
-      <div class="panel-head"><h2>Mes ingrédients</h2></div>
-      <p class="small muted">Ajoute directement les ingrédients que tu as récupérés (ex: champignons) à ton propre stock.</p>
+      <div class="panel-head"><h2>Stock d'ingrédients (commun)</h2></div>
+      <p class="small muted">Stock commun à toute la faction — ajoute ce que tu as récolté (ex: champignons), ça met à jour le stock pour tout le monde.</p>
       <div id="zoneIngredients">Chargement…</div>
     </div>
 
@@ -64,7 +64,7 @@ function renderContent() {
         <div><label class="l">Date</label><input type="date" id="fDate"></div>
         <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduction()">Enregistrer</button></div>
       </div>
-      <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock perso, et ajoute la quantité produite au stock perso (pas au stock commun de la faction).</p>
+      <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock commun, et ajoute la quantité produite au stock perso (pas au stock commun de la faction).</p>
     </div>
 
     <div class="panel mt24">
@@ -127,24 +127,23 @@ async function ajouterIngredient(pid) {
   const input = document.getElementById("qteIng_" + pid);
   const qte = Number(input.value) || 0;
   if (qte <= 0) { toast("Quantité invalide.", true); return; }
-  const ref = db.ref(`labo_stock/${SESSION.id}/${pid}`);
+  const ref = db.ref(`labo_stock_commun/${pid}`);
   const snap = await ref.once("value");
   const current = Number(snap.val()) || 0;
   await ref.set(current + qte);
   input.value = 1;
-  toast("Ajouté à ton stock.");
+  toast("Ajouté au stock commun.");
   await chargerTout();
 }
 
 function afficherZoneIngredients() {
   const zone = document.getElementById("zoneIngredients");
   const ingredients = Object.entries(LABO_PRODUITS).filter(([, p]) => !(p.recipe && p.recipe.length));
-  const monStock = LABO_STOCK[SESSION.id] || {};
   zone.innerHTML = ingredients.length ? ingredients.map(([pid, p]) => `
     <div class="row mt8" style="align-items:center;">
-      <div style="min-width:160px;">${p.nom} — <strong>${Number(monStock[pid]) || 0}</strong> en stock</div>
+      <div style="min-width:160px;">${p.nom} — <strong>${Number(LABO_STOCK_COMMUN[pid]) || 0}</strong> en stock</div>
       <input type="number" id="qteIng_${pid}" value="1" min="1" style="max-width:90px;">
-      <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter à mon stock</button>
+      <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter au stock commun</button>
     </div>
   `).join("") : '<p class="muted small">Aucun ingrédient configuré.</p>';
 }
@@ -174,7 +173,7 @@ async function ajouterProduction() {
   if (resultat === "Réussite") {
     const recipe = prod.recipe || [];
     for (const ligne of recipe) {
-      const refIng = db.ref(`labo_stock/${membreId}/${ligne.ingredientId}`);
+      const refIng = db.ref(`labo_stock_commun/${ligne.ingredientId}`);
       const snapIng = await refIng.once("value");
       const currentIng = Number(snapIng.val()) || 0;
       await refIng.set(Math.max(0, currentIng - ligne.qty * qte));
@@ -195,8 +194,8 @@ async function ajouterProduction() {
 async function afficherStock() {
   const membreId = document.getElementById("selStockMembre").value;
   const zone = document.getElementById("zoneStock");
-  const produitsIds = Object.keys(LABO_PRODUITS);
-  if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit Labo configuré.</p>'; return; }
+  const produitsIds = Object.entries(LABO_PRODUITS).filter(([, p]) => p.recipe && p.recipe.length).map(([pid]) => pid);
+  if (!produitsIds.length) { zone.innerHTML = '<p class="muted small">Aucun produit fini Labo configuré.</p>'; return; }
 
   if (membreId) {
     const stockMembre = LABO_STOCK[membreId] || {};
@@ -212,7 +211,7 @@ async function afficherStock() {
 }
 
 async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) {
-  if (!confirm("Supprimer cette production ? Les ingrédients consommés seront restitués.")) return;
+  if (!confirm("Supprimer cette production ? Les ingrédients consommés seront restitués au stock commun.")) return;
   if (resultat === "Réussite") {
     const ref = db.ref(`labo_stock/${membreId}/${pid}`);
     const snap = await ref.once("value");
@@ -220,7 +219,7 @@ async function supprimerProduction(semaineId, id, membreId, pid, qte, resultat) 
     await ref.set(Math.max(0, current - qte));
     const recipe = (LABO_PRODUITS[pid] || {}).recipe || [];
     for (const ligne of recipe) {
-      const refIng = db.ref(`labo_stock/${membreId}/${ligne.ingredientId}`);
+      const refIng = db.ref(`labo_stock_commun/${ligne.ingredientId}`);
       const snapIng = await refIng.once("value");
       const currentIng = Number(snapIng.val()) || 0;
       await refIng.set(currentIng + ligne.qty * qte);
@@ -250,12 +249,13 @@ function renderHistorique() {
 let HISTORIQUE = [];
 
 async function chargerListes() {
-  const [snapM, snapStock, snapLaboStock] = await Promise.all([
-    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value")
+  const [snapM, snapStock, snapLaboStock, snapLaboCommun] = await Promise.all([
+    db.ref("membres").once("value"), db.ref("stock/labo_cat").once("value"), db.ref("labo_stock").once("value"), db.ref("labo_stock_commun").once("value")
   ]);
   MEMBRES = snapM.val() || {};
   LABO_PRODUITS = (snapStock.val() || {}).produits || {};
   LABO_STOCK = snapLaboStock.val() || {};
+  LABO_STOCK_COMMUN = snapLaboCommun.val() || {};
 
   const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
   filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
