@@ -65,7 +65,7 @@ function renderContent() {
     <div class="panel mt16">
       <div class="panel-head"><h2>Nouvelle production</h2></div>
       <div class="row">
-        <div><label class="l">Membre</label><select id="fMembre"></select></div>
+        <div id="wrapFMembre"><label class="l">Membre</label><select id="fMembre"></select></div>
         <div><label class="l">Produit</label><select id="fProduit"></select></div>
         <div><label class="l">Quantité</label><input type="number" id="fQte" value="1" min="1"></div>
       </div>
@@ -137,7 +137,7 @@ async function supprimerProduit(pid) {
 async function ajouterProduction() {
   if (!ACTIVE_WEEK) { toast("Aucune semaine active.", true); return; }
   if (ACTIVE_WEEK.bloquee) { toast("La semaine active est bloquée.", true); return; }
-  const membreId = document.getElementById("fMembre").value;
+  const membreId = SESSION.role === "admin" ? document.getElementById("fMembre").value : SESSION.id;
   const pid = document.getElementById("fProduit").value;
   const qte = Number(document.getElementById("fQte").value) || 0;
   const resultat = document.getElementById("fResultat").value;
@@ -242,12 +242,22 @@ async function chargerListes() {
   LABO_PRODUITS = (snapStock.val() || {}).produits || {};
   LABO_STOCK = snapLaboStock.val() || {};
 
-  const selM = document.getElementById("fMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
-  selM.innerHTML = ""; filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
+  const wrapFM = document.getElementById("wrapFMembre"), filtM = document.getElementById("filtMembre"), selStockM = document.getElementById("selStockMembre");
+  filtM.innerHTML = '<option value="">Tous les membres</option>'; selStockM.innerHTML = '<option value="">Tous les membres</option>';
+  if (SESSION.role === "admin") {
+    wrapFM.innerHTML = `<label class="l">Membre</label><select id="fMembre"></select>`;
+    const selM = document.getElementById("fMembre");
+    entries(MEMBRES).forEach(([id, m]) => {
+      if (m.actif === false) return;
+      const label = m.prenom + (m.nom ? " " + m.nom : "");
+      selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
+    });
+  } else {
+    wrapFM.innerHTML = `<label class="l">Membre</label><input type="text" value="${SESSION.prenom}" disabled>`;
+  }
   entries(MEMBRES).forEach(([id, m]) => {
     if (m.actif === false) return;
     const label = m.prenom + (m.nom ? " " + m.nom : "");
-    selM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
     filtM.appendChild(new Option(label, id));
     selStockM.appendChild(new Option(label, id, id === SESSION.id, id === SESSION.id));
   });
