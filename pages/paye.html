@@ -14,13 +14,13 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_DROGUE = 20, TAUX_AUTRES = 45;
+let SESSION, SEMAINES = [], SEMAINE_SEL = null, TAUX_DROGUE = 20, TAUX_AUTRES = 45, TAUX_BLANCHIMENT = 35;
 
 function renderContent() {
   document.getElementById("content").innerHTML = `
     <h1>Paye</h1>
     <div class="sigil-rule"></div>
-    <p class="muted small">Montant suggéré = (gains Vente de Drogue × ${TAUX_DROGUE}%) + (gains action × ${TAUX_AUTRES}%). Taux modifiables dans Admin → Config.</p>
+    <p class="muted small">Montant suggéré = (gains Vente de Drogue × ${TAUX_DROGUE}%) + (gains action × ${TAUX_AUTRES}%). En "Propre", -${TAUX_BLANCHIMENT}% de blanchiment est appliqué automatiquement. Taux modifiables dans Admin → Config.</p>
 
     <div class="panel mt16">
       <div class="row" style="align-items:flex-end;">
@@ -98,8 +98,8 @@ async function chargerPaye() {
       <td>${formatMoney(gainsDrogue)}</td>
       <td>${formatMoney(gainsAction)}</td>
       <td class="mono">${formatMoney(totalGenere)}</td>
-      <td>${formatMoney(montant)}</td>
-      <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}"><option value="propre">Propre</option><option value="sale">Sale</option></select>` : "-"}</td>
+      <td id="montantCell_${m.id}">${formatMoney(montant)}</td>
+      <td>${isAdmin && !dejaPaye ? `<select id="typeArgent_${m.id}" onchange="onArgentChange('${m.id}', ${montant})"><option value="sale" selected>Sale</option><option value="propre">Propre (-${TAUX_BLANCHIMENT}%)</option></select>` : "-"}</td>
       <td>${dejaPaye ? '<span class="badge badge-ok">Payé</span>' : (isAdmin ? `<span class="btn btn-sm btn-gold" onclick="payer('${m.id}','${m.prenom}',${montant})">Payer</span>` : '<span class="badge badge-warn">En attente</span>')}</td>
     </tr>`;
   }).join("") : '<tr class="empty-row"><td colspan="7">Aucun membre</td></tr>';
@@ -107,10 +107,17 @@ async function chargerPaye() {
   document.getElementById("totalPayeDisp").textContent = formatMoney(totalPaye);
 }
 
-async function payer(membreId, prenom, montant) {
-  if (montant <= 0) { toast("Montant invalide.", true); return; }
+function onArgentChange(membreId, montantBase) {
   const typeArgent = document.getElementById("typeArgent_" + membreId).value;
-  if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}) à ${prenom} ?`)) return;
+  const montantAffiche = typeArgent === "propre" ? Math.round(montantBase * (1 - TAUX_BLANCHIMENT / 100)) : montantBase;
+  document.getElementById("montantCell_" + membreId).textContent = formatMoney(montantAffiche);
+}
+
+async function payer(membreId, prenom, montantBase) {
+  if (montantBase <= 0) { toast("Montant invalide.", true); return; }
+  const typeArgent = document.getElementById("typeArgent_" + membreId).value;
+  const montant = typeArgent === "propre" ? Math.round(montantBase * (1 - TAUX_BLANCHIMENT / 100)) : montantBase;
+  if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}${typeArgent === "propre" ? `, -${TAUX_BLANCHIMENT}% de blanchiment déjà appliqué` : ""}) à ${prenom} ?`)) return;
 
   await db.ref(`payes/${SEMAINE_SEL.id}/${membreId}`).set({
     montant, type_argent: typeArgent, date: todayISO(), par: SESSION.prenom, createdAt: Date.now()
@@ -131,6 +138,7 @@ async function payer(membreId, prenom, montant) {
   const cfg = snapCfg.val() || {};
   TAUX_DROGUE = cfg.taux_paye_drogue ?? 20;
   TAUX_AUTRES = cfg.taux_paye_autres ?? 45;
+  TAUX_BLANCHIMENT = cfg.blanchiment_taux ?? 35;
   renderContent();
   await chargerSemaines();
   await chargerPaye();
