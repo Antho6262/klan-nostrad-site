@@ -63,6 +63,12 @@ function renderContent() {
     </div>` : ""}
 
     <div class="panel mt16">
+      <div class="panel-head"><h2>Mes ingrédients</h2></div>
+      <p class="small muted">Ajoute directement les ingrédients que tu as récupérés (ex: champignons) à ton propre stock.</p>
+      <div id="zoneIngredients">Chargement…</div>
+    </div>
+
+    <div class="panel mt16">
       <div class="panel-head"><h2>Nouvelle production</h2></div>
       <div class="row">
         <div id="wrapFMembre"><label class="l">Membre</label><select id="fMembre"></select></div>
@@ -75,7 +81,7 @@ function renderContent() {
         <div><label class="l">Date</label><input type="date" id="fDate"></div>
         <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterProduction()">Enregistrer</button></div>
       </div>
-      <p class="small muted mt8">Une production réussie ajoute la quantité au stock personnel du membre choisi (pas au stock commun de la faction).</p>
+      <p class="small muted mt8">Une production réussie retire automatiquement les ingrédients de la recette du stock perso, et ajoute la quantité produite au stock perso (pas au stock commun de la faction).</p>
     </div>
 
     <div class="panel mt24">
@@ -132,6 +138,32 @@ async function supprimerProduit(pid) {
   if (!confirm("Supprimer ce produit du catalogue Labo ?")) return;
   await db.ref("stock/labo_cat/produits/" + pid).remove();
   await chargerListes();
+}
+
+async function ajouterIngredient(pid) {
+  const input = document.getElementById("qteIng_" + pid);
+  const qte = Number(input.value) || 0;
+  if (qte <= 0) { toast("Quantité invalide.", true); return; }
+  const ref = db.ref(`labo_stock/${SESSION.id}/${pid}`);
+  const snap = await ref.once("value");
+  const current = Number(snap.val()) || 0;
+  await ref.set(current + qte);
+  input.value = 1;
+  toast("Ajouté à ton stock.");
+  await chargerTout();
+}
+
+function afficherZoneIngredients() {
+  const zone = document.getElementById("zoneIngredients");
+  const ingredients = Object.entries(LABO_PRODUITS).filter(([, p]) => !(p.recipe && p.recipe.length));
+  const monStock = LABO_STOCK[SESSION.id] || {};
+  zone.innerHTML = ingredients.length ? ingredients.map(([pid, p]) => `
+    <div class="row mt8" style="align-items:center;">
+      <div style="min-width:160px;">${p.nom} — <strong>${Number(monStock[pid]) || 0}</strong> en stock</div>
+      <input type="number" id="qteIng_${pid}" value="1" min="1" style="max-width:90px;">
+      <button class="btn btn-gold" onclick="ajouterIngredient('${pid}')">Ajouter à mon stock</button>
+    </div>
+  `).join("") : '<p class="muted small">Aucun ingrédient configuré.</p>';
 }
 
 async function ajouterProduction() {
@@ -264,9 +296,12 @@ async function chargerListes() {
 
   const selP = document.getElementById("fProduit");
   const prodEntries = Object.entries(LABO_PRODUITS);
-  selP.innerHTML = prodEntries.length
-    ? prodEntries.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
-    : '<option value="">Aucun produit — ajoute-en un ci-dessus</option>';
+  const produitsFinaux = prodEntries.filter(([, p]) => p.recipe && p.recipe.length);
+  selP.innerHTML = produitsFinaux.length
+    ? produitsFinaux.map(([pid, p]) => `<option value="${pid}">${p.nom}</option>`).join("")
+    : '<option value="">Aucun produit avec recette — configure-en un dans le catalogue</option>';
+
+  afficherZoneIngredients();
 
   if (SESSION.role === "admin") {
     const selIng = document.getElementById("recetteIngredient");
