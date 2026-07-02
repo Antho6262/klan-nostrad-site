@@ -115,8 +115,9 @@ function badgeNiveau(p) {
 }
 
 async function chargerStock() {
-  const snap = await db.ref("stock").once("value");
-  STOCK = snap.val() || {};
+  const [snapStock, snapLaboCommun] = await Promise.all([db.ref("stock").once("value"), db.ref("labo_stock_commun").once("value")]);
+  STOCK = snapStock.val() || {};
+  const laboCommun = snapLaboCommun.val() || {};
 
   const selProduit = document.getElementById("fProduit");
   selProduit.innerHTML = "";
@@ -128,19 +129,23 @@ async function chargerStock() {
 
   const wrap = document.getElementById("catsWrap");
   const catList = entries(STOCK);
-  wrap.innerHTML = catList.length ? catList.map(([catId, cat]) => `
+  wrap.innerHTML = catList.length ? catList.map(([catId, cat]) => {
+    const isLabo = cat.nom === "Labo";
+    return `
     <div class="panel">
       <div class="panel-head"><h2>${cat.emoji || "📦"} ${cat.nom}</h2></div>
       <table>
         <thead><tr><th>Produit</th><th>Prix</th><th>Stock</th><th>Seuil</th><th>Niveau</th></tr></thead>
         <tbody>
-          ${entries(cat.produits).length ? entries(cat.produits).map(([pid, p]) => `
-            <tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${p.stock}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(p)}</td></tr>
-          `).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit dans cette catégorie</td></tr>'}
+          ${entries(cat.produits).length ? entries(cat.produits).map(([pid, p]) => {
+            const stockVal = isLabo ? (Number(laboCommun[pid]) || 0) : (Number(p.stock) || 0);
+            const pAff = { ...p, stock: stockVal };
+            return `<tr><td>${p.nom}</td><td>${formatMoney(p.prix)}</td><td class="mono">${stockVal}</td><td class="mono">${p.seuil || 0}</td><td>${badgeNiveau(pAff)}</td></tr>`;
+          }).join("") : '<tr class="empty-row"><td colspan="5">Aucun produit dans cette catégorie</td></tr>'}
         </tbody>
       </table>
-    </div>
-  `).join("") : '<div class="panel"><p class="muted">Aucune catégorie de stock définie. Configure-les dans Admin → Stock.</p></div>';
+    </div>`;
+  }).join("") : '<div class="panel"><p class="muted">Aucune catégorie de stock définie. Configure-les dans Admin → Stock.</p></div>';
 }
 
 async function mouvement() {
@@ -151,7 +156,8 @@ async function mouvement() {
   const sens = document.getElementById("fSens").value;
   if (qte <= 0) { toast("Quantité invalide.", true); return; }
 
-  const ref = db.ref(`stock/${catId}/produits/${pid}/stock`);
+  const isLabo = (STOCK[catId] && STOCK[catId].nom === "Labo");
+  const ref = isLabo ? db.ref(`labo_stock_commun/${pid}`) : db.ref(`stock/${catId}/produits/${pid}/stock`);
   const snap = await ref.once("value");
   const current = Number(snap.val()) || 0;
   const next = sens === "ajout" ? current + qte : Math.max(0, current - qte);

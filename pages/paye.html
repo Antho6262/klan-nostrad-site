@@ -117,7 +117,7 @@ function onArgentChange(membreId, montantBase) {
 }
 
 async function payer(membreId, prenom, montantBase) {
-  if (montantBase <= 0) { toast("Montant invalide.", true); return; }
+  if (montantBase < 0) { toast("Montant invalide.", true); return; }
   const typeArgent = document.getElementById("typeArgent_" + membreId).value;
   const montant = typeArgent === "propre" ? Math.round(montantBase * (1 - TAUX_BLANCHIMENT / 100)) : montantBase;
   if (!confirm(`Confirmer le paiement de ${formatMoney(montant)} (argent ${typeArgent}${typeArgent === "propre" ? `, -${TAUX_BLANCHIMENT}% de blanchiment déjà appliqué` : ""}) à ${prenom} ?`)) return;
