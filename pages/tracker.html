@@ -14,7 +14,7 @@
 <script src="../js/firebase-config.js"></script>
 <script src="../js/app.js"></script>
 <script>
-let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set();
+let SESSION, ACTIVE_WEEK = null, MEMBRES = {}, ACTIONS_DISPO = {}, STOCK = {}, GRADES_MASQUES = new Set(), EVENT_ACTIF = null;
 
 async function getActiveWeek() {
   const snap = await db.ref("semaines").once("value");
@@ -55,6 +55,7 @@ function renderContent() {
         <div><label class="l">Argent propre ($)</label><input type="number" id="fPropre" value="0"></div>
         <div style="display:flex;align-items:flex-end;"><button class="btn btn-primary" style="width:100%;" onclick="ajouterAction()">Enregistrer</button></div>
       </div>
+      <div id="eventTrackerBanner"></div>
       <p class="small muted mt8">Le stock lié à l'action (recette définie dans Admin → Actions) est déduit automatiquement si le résultat est "Réussite".</p>
     </div>
 
@@ -96,6 +97,19 @@ function onActionChange() {
   }
   document.getElementById("equipeWrap").style.display = (act && (act.nom === "Armurerie" || act.nom === "Fleeca")) ? "block" : "none";
   renderEquipeCheckboxes();
+
+  // bannière event drogue
+  const banner = document.getElementById("eventTrackerBanner");
+  const isDrogue = act && act.cat_variable;
+  if (isDrogue && EVENT_ACTIF) {
+    const fin = new Date(EVENT_ACTIF.fin).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    banner.innerHTML = `<div style="margin:10px 0;padding:12px 18px;border-radius:6px;background:linear-gradient(135deg,rgba(212,175,55,0.25),rgba(212,175,55,0.08));border:2px solid var(--gold);text-align:center;animation:pulse 2s infinite;">
+      🎯 <strong style="color:var(--gold)">EVENT EN COURS</strong> — Taux drogue à <strong style="color:var(--gold)">${EVENT_ACTIF.taux}%</strong> jusqu'à <strong style="color:var(--gold)">${fin}</strong>
+    </div>`;
+  } else {
+    banner.innerHTML = "";
+  }
+
   autoFillMontants();
 }
 
@@ -271,6 +285,12 @@ async function supprimerAction(id) {
   renderContent();
   await chargerListes();
   await renderTable();
+
+  db.ref("events_drogue").on("value", snap => {
+    const now = Date.now();
+    const events = entries(snap.val() || {}).map(([, e]) => e);
+    EVENT_ACTIF = events.find(e => now >= e.debut && now <= e.fin) || null;
+  });
 })();
 </script>
 </body>
