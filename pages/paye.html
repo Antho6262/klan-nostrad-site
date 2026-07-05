@@ -100,9 +100,9 @@ async function chargerPaye() {
   document.getElementById("tblPaye").innerHTML = membres.length ? membres.map(m => {
     const mesActions = actions.filter(a => a.resultat === "Réussite" && (a.membre_id === m.id || (a.participants_ids && a.participants_ids.includes(m.id))));
     const actionsDrogue = mesActions.filter(a => actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable);
-    const gainsDrogue = actionsDrogue.reduce((acc, a) => acc + partGains(m.id, a), 0);
-    const gainsAction = mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
-      .reduce((acc, a) => acc + partGains(m.id, a), 0);
+    const gainsDrogue = Math.round(actionsDrogue.reduce((acc, a) => acc + partGains(m.id, a), 0));
+    const gainsAction = Math.round(mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
+      .reduce((acc, a) => acc + partGains(m.id, a), 0));
     const totalGenere = gainsDrogue + gainsAction;
     const dejaPaye = payes[m.id];
     const payeDrogue = actionsDrogue.reduce((acc, a) => acc + Math.round(partGains(m.id, a) * tauxDrogueForAction(a) / 100), 0);
