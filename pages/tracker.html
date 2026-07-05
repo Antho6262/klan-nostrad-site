@@ -103,8 +103,16 @@ function onActionChange() {
   const isDrogue = act && act.cat_variable;
   if (isDrogue && EVENT_ACTIF) {
     const fin = new Date(EVENT_ACTIF.fin).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const lignes = [];
+    if (EVENT_ACTIF.taux) lignes.push(`Drogue <strong style="color:var(--gold)">${EVENT_ACTIF.taux}%</strong>`);
+    if (EVENT_ACTIF.taux_actions) lignes.push(`Actions <strong style="color:var(--gold)">${EVENT_ACTIF.taux_actions}%</strong>`);
     banner.innerHTML = `<div style="margin:10px 0;padding:12px 18px;border-radius:6px;background:linear-gradient(135deg,rgba(212,175,55,0.25),rgba(212,175,55,0.08));border:2px solid var(--gold);text-align:center;animation:pulse 2s infinite;">
-      🎯 <strong style="color:var(--gold)">EVENT EN COURS</strong> — Taux drogue à <strong style="color:var(--gold)">${EVENT_ACTIF.taux}%</strong> jusqu'à <strong style="color:var(--gold)">${fin}</strong>
+      🎯 <strong style="color:var(--gold)">EVENT EN COURS</strong> — ${lignes.join(" · ")} jusqu'à <strong style="color:var(--gold)">${fin}</strong>
+    </div>`;
+  } else if (!isDrogue && EVENT_ACTIF && EVENT_ACTIF.taux_actions) {
+    const fin = new Date(EVENT_ACTIF.fin).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    banner.innerHTML = `<div style="margin:10px 0;padding:12px 18px;border-radius:6px;background:linear-gradient(135deg,rgba(212,175,55,0.25),rgba(212,175,55,0.08));border:2px solid var(--gold);text-align:center;animation:pulse 2s infinite;">
+      🎯 <strong style="color:var(--gold)">EVENT EN COURS</strong> — Actions à <strong style="color:var(--gold)">${EVENT_ACTIF.taux_actions}%</strong> jusqu'à <strong style="color:var(--gold)">${fin}</strong>
     </div>`;
   } else {
     banner.innerHTML = "";

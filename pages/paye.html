@@ -80,7 +80,12 @@ async function chargerPaye() {
   function tauxDrogueForAction(a) {
     const ts = a.createdAt || 0;
     const ev = events.find(e => ts >= e.debut && ts <= e.fin);
-    return ev ? ev.taux : TAUX_DROGUE;
+    return ev && ev.taux ? ev.taux : TAUX_DROGUE;
+  }
+  function tauxActionsForAction(a) {
+    const ts = a.createdAt || 0;
+    const ev = events.find(e => ts >= e.debut && ts <= e.fin);
+    return ev && ev.taux_actions ? ev.taux_actions : TAUX_AUTRES;
   }
 
   const calcSolde = v => entries(v).reduce((acc, [, l]) => acc + (l.type === "Sortie" ? -Number(l.montant || 0) : Number(l.montant || 0)), 0);
@@ -101,7 +106,9 @@ async function chargerPaye() {
     const totalGenere = gainsDrogue + gainsAction;
     const dejaPaye = payes[m.id];
     const payeDrogue = actionsDrogue.reduce((acc, a) => acc + Math.round(partGains(m.id, a) * tauxDrogueForAction(a) / 100), 0);
-    const suggestion = payeDrogue + Math.round(gainsAction * TAUX_AUTRES / 100);
+    const payeActions = mesActions.filter(a => !(actionsDispo[a.action_id] && actionsDispo[a.action_id].cat_variable))
+      .reduce((acc, a) => acc + Math.round(partGains(m.id, a) * tauxActionsForAction(a) / 100), 0);
+    const suggestion = payeDrogue + payeActions;
     const montant = dejaPaye ? Number(dejaPaye.montant) || 0 : suggestion;
     if (dejaPaye) totalPaye += Number(dejaPaye.montant) || 0;
 
