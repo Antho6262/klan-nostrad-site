@@ -49,7 +49,7 @@ async function initShell(activePage, pageTitle) {
       <aside class="sidebar">
         <div class="sidebar-head">
           <img src="${root}img/logo.png" alt="Volta" class="sidebar-coin">
-          <div class="sidebar-logo"><span class="full">KLAN<br>NOSTRAD</span></div>
+          <div class="sidebar-logo"><span class="full">VOLTA</span></div>
         </div>
         <nav class="nav">${navHtml}</nav>
         <div class="sidebar-foot">
