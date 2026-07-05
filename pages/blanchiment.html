@@ -34,8 +34,8 @@ function renderContent() {
 
     <div class="panel">
       <div class="panel-head"><h2>Historique</h2></div>
-      <table><thead><tr><th>Date</th><th>Description</th><th>Sale</th><th>Frais</th><th>Propre récupéré</th><th>Par</th></tr></thead>
-        <tbody id="tblHisto"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody></table>
+      <table><thead><tr><th>Date</th><th>Description</th><th>Sale</th><th>Frais</th><th>Propre récupéré</th><th>Par</th>${SESSION.role === 'admin' ? '<th></th>' : ''}</tr></thead>
+        <tbody id="tblHisto"><tr class="empty-row"><td colspan="${SESSION.role === 'admin' ? 7 : 6}">Chargement…</td></tr></tbody></table>
     </div>
   `;
 }
@@ -63,12 +63,26 @@ async function blanchir() {
   chargerHisto();
 }
 
+async function supprimerBlanchiment(id, montantSale, montantPropre, desc, date) {
+  if (!confirm("Annuler ce blanchiment ? Les mouvements d'argent associés seront supprimés.")) return;
+  await db.ref("blanchiments/" + id).remove();
+  // rollback argent : supprimer les lignes correspondantes
+  const [snapSale, snapPropre] = await Promise.all([db.ref("argent/sale").once("value"), db.ref("argent/propre").once("value")]);
+  entries(snapSale.val()).forEach(([k, l]) => { if (l.montant === montantSale && l.date === date) db.ref("argent/sale/" + k).remove(); });
+  entries(snapPropre.val()).forEach(([k, l]) => { if (l.montant === montantPropre && l.date === date) db.ref("argent/propre/" + k).remove(); });
+  toast("Blanchiment annulé.");
+  chargerHisto();
+}
+
 async function chargerHisto() {
   const snap = await db.ref("blanchiments").once("value");
-  const list = entries(snap.val()).map(([id, b]) => b).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = entries(snap.val()).map(([id, b]) => ({ id, ...b })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const isAdmin = SESSION.role === "admin";
   document.getElementById("tblHisto").innerHTML = list.length ? list.map(b => `
-    <tr><td>${b.date}</td><td>${b.description}</td><td>${formatMoney(b.montant_sale)}</td><td class="muted">${formatMoney(b.frais)}</td><td class="mono" style="color:var(--gold)">${formatMoney(b.montant_propre)}</td><td>${b.responsable}</td></tr>
-  `).join("") : '<tr class="empty-row"><td colspan="6">Aucun blanchiment</td></tr>';
+    <tr><td>${b.date}</td><td>${b.description}</td><td>${formatMoney(b.montant_sale)}</td><td class="muted">${formatMoney(b.frais)}</td><td class="mono" style="color:var(--gold)">${formatMoney(b.montant_propre)}</td><td>${b.responsable}</td>
+    ${isAdmin ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerBlanchiment('${b.id}',${b.montant_sale},${b.montant_propre},'${b.description}','${b.date}')">Annuler</span></td>` : ""}
+    </tr>
+  `).join("") : `<tr class="empty-row"><td colspan="${isAdmin ? 7 : 6}">Aucun blanchiment</td></tr>`;
 }
 
 (async function () {
