@@ -37,6 +37,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="js/firebase-config.js"></script>
 <script>
 let MEMBRES = {};
@@ -75,8 +76,18 @@ function doLogin() {
     errEl.textContent = "Mot de passe incorrect.";
     return;
   }
-  setSession({ id, prenom: m.prenom, nom: m.nom || "", grade: m.grade, role: m.role || "membre" });
-  window.location.href = "pages/dashboard.html";
+  if (m.actif === false) {
+    errEl.textContent = "Compte désactivé.";
+    return;
+  }
+  firebase.auth().signInAnonymously().then(cred => {
+    return db.ref("sessions/" + cred.user.uid).set(id);
+  }).then(() => {
+    setSession({ id, prenom: m.prenom, nom: m.nom || "", grade: m.grade, role: m.role || "membre" });
+    window.location.href = "pages/dashboard.html";
+  }).catch(() => {
+    errEl.textContent = "Erreur de connexion.";
+  });
 }
 
 function toggleOublie(e) {
