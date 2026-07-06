@@ -23,6 +23,10 @@ const NOM_GROUPE = "Volta";
 firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
 
+firebase.auth().onAuthStateChanged(user => {
+  if (!user) firebase.auth().signInAnonymously();
+});
+
 /* ---------- liste des pages de l'app (utilisée par admin + permissions) ---------- */
 const PAGES_DISPO = [
   { page: "dashboard",     label: "Dashboard" },
