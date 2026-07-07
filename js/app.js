@@ -24,12 +24,17 @@ async function initShell(activePage, pageTitle) {
   const session = requireSession();
   if (!session) return null;
 
-  const allowed = await canAccess(session, activePage);
+  let allowed;
+  try {
+    allowed = await canAccess(session, activePage);
+  } catch (e) {
+    allowed = false;
+  }
   if (!allowed) {
     document.body.innerHTML =
       '<div class="login-wrap"><div class="login-card"><div class="login-brand">ACCÈS REFUSÉ</div>' +
-      '<p class="muted" style="text-align:center;margin-top:10px;">Ton grade n\'a pas accès à cette page.</p>' +
-      '<a href="' + pathToRoot() + 'pages/dashboard.html" class="btn btn-primary" style="margin-top:16px;display:block;text-align:center;">Retour au dashboard</a></div></div>';
+      '<p class="muted" style="text-align:center;margin-top:10px;">Ton compte est désactivé ou n\'a pas accès à cette page.</p>' +
+      '<a href="' + pathToRoot() + 'index.html" class="btn btn-primary" style="margin-top:16px;display:block;text-align:center;" onclick="clearSession()">Retour à la connexion</a></div></div>';
     return null;
   }
 
