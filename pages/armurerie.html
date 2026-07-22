@@ -146,7 +146,8 @@ async function chargerArmes() {
     <td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
     ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
     </tr>
-  `).join("") : '<tr class="empty-row"><td colspan="6">Aucune arme enregistrée</td></tr>';
+  `;
+  }).join("") : '<tr class="empty-row"><td colspan="6">Aucune arme enregistrée</td></tr>';
 }
 
 async function supprimerArme(id) {
