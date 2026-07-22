@@ -132,17 +132,34 @@ async function importerPhoto(id, input) {
   chargerArmes();
 }
 
+async function assignerModele(id, nom) {
+  if (!nom) return;
+  const arme = CATALOGUE_ARMES.find(a => a.nom === nom);
+  if (!arme) return;
+  await db.ref("armurerie/" + id + "/photo_url").set(arme.photo);
+  toast("Photo associée.");
+  chargerArmes();
+}
+
 async function chargerArmes() {
   const snap = await db.ref("armurerie").once("value");
   const list = entries(snap.val()).map(([id, a]) => ({ id, ...a })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const canDelete = SESSION.role === "admin";
   document.getElementById("tblArmes").innerHTML = list.length ? list.map(a => {
     const photo = photoPourArme(a);
-    const cellPhoto = photo
-      ? `<img src="${photo}" alt="${a.type_arme}" style="height:70px;cursor:pointer;" onclick="document.getElementById('imp_${a.id}').click()">`
-      : `<label class="btn btn-sm" style="cursor:pointer;">+<input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)"></label>`;
+    let cellPhoto;
+    if (photo) {
+      cellPhoto = `<img src="${photo}" alt="${a.type_arme}" style="height:70px;cursor:pointer;" onclick="document.getElementById('imp_${a.id}').click()">
+        <input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)">`;
+    } else {
+      const options = ['<option value="">Choisir modèle...</option>'].concat(CATALOGUE_ARMES.map(c => `<option value="${c.nom}">${c.nom}</option>`)).join("");
+      cellPhoto = `
+        <select onchange="assignerModele('${a.id}', this.value)" style="margin-bottom:6px;">${options}</select>
+        <label class="btn btn-sm" style="cursor:pointer;">+ Importer<input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)"></label>
+      `;
+    }
     return `
-    <tr><td style="text-align:left;">${cellPhoto}${photo ? `<input type="file" accept="image/*" id="imp_${a.id}" style="display:none;" onchange="importerPhoto('${a.id}', this)">` : ""}</td>
+    <tr><td style="text-align:left;">${cellPhoto}</td>
     <td>${a.prenom_membre} ${a.nom_membre || ""}</td><td>${a.type_arme}</td><td class="mono">${a.numero_serie}</td><td>${a.date}</td>
     ${canDelete || a.membre_id === SESSION.id ? `<td><span class="btn btn-sm btn-danger" onclick="supprimerArme('${a.id}')">Suppr.</span></td>` : "<td></td>"}
     </tr>
