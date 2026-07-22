@@ -118,11 +118,10 @@ function badgeNiveau(p) {
   return '<span class="badge badge-ok">OK</span>';
 }
 
-async function chargerStock() {
-  const [snapStock, snapLaboCommun] = await Promise.all([db.ref("stock").once("value"), db.ref("labo_stock_commun").once("value")]);
-  STOCK = snapStock.val() || {};
-  const laboCommun = snapLaboCommun.val() || {};
+let LABO_COMMUN = {};
 
+function renderStock() {
+  const laboCommun = LABO_COMMUN;
   const selProduit = document.getElementById("fProduit");
   selProduit.innerHTML = "";
   entries(STOCK).forEach(([catId, cat]) => {
@@ -174,7 +173,6 @@ async function mouvement() {
   });
 
   toast("Stock mis à jour.");
-  await chargerStock();
 }
 
 (async function () {
@@ -182,7 +180,8 @@ async function mouvement() {
   SESSION = await initShell("stock", "Stock");
   if (!SESSION) return;
   renderContent();
-  await chargerStock();
+  db.ref("stock").on("value", snap => { STOCK = snap.val() || {}; renderStock(); });
+  db.ref("labo_stock_commun").on("value", snap => { LABO_COMMUN = snap.val() || {}; renderStock(); });
   await chargerArgent();
 })();
 </script>
